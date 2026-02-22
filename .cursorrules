@@ -1,0 +1,318 @@
+# AI Trading Swarm — Cursor Rules
+
+## READ FIRST
+You are building a multi-agent AI committee system for autonomous cryptocurrency paper trading.
+Before writing any code, read ARCHITECTURE.md for the full system design, schema, and agent specifications.
+
+---
+
+## What This System Does
+
+Six specialist AI agents (Bull, Bear, Quant, Macro, Sentiment, Risk Management) deliberate on
+incoming trade signals from TradingView. A central Orchestrator agent synthesises their analysis
+into a final trade decision. All trades execute in paper (simulated) mode via OctoBot during
+validation. No real capital is deployed until strict performance criteria are met.
+
+---
+
+## Stack — Use Only These Technologies
+
+- **Runtime:** Node.js
+- **Hosting:** Railway (Docker, GitHub integration)
+- **Database:** Supabase (PostgreSQL + real-time subscriptions)
+- **Trade execution:** OctoBot (open source, Docker, paper trading mode)
+- **LLMs:** Anthropic API only — do not suggest OpenAI or other providers
+- **Agent models:** Defined in /config/models.js — never hardcode model strings elsewhere
+- **Risk Agent:** Deterministic rules engine — absolutely no LLM
+- **Dashboard:** React, Railway hosted, Supabase real-time subscriptions
+- **Do not introduce** any framework, library, or service not listed in ARCHITECTURE.md without flagging it first
+
+---
+
+## MODEL ROUTING — READ BEFORE EVERY TASK
+
+### The Golden Rule
+All Anthropic model strings are defined in /config/models.js only.
+Never write a model string anywhere else in the codebase.
+Always import from /config/models.js in agent files.
+
+### Correct import pattern — use this every time
+```javascript
+const { MODELS, TOKEN_BUDGETS } = require('../../config/models.js');
+
+const response = await anthropic.messages.create({
+  model:      MODELS.bull,         // ← always from config, never inline
+  max_tokens: TOKEN_BUDGETS.bull,  // ← always from config, never inline
+  messages:   [{ role: 'user', content: prompt }],
+});
+```
+
+### Model assignments (reference only — config/models.js is authoritative)
+| Agent | Model | Cursor session model |
+|---|---|---|
+| Orchestrator | claude-sonnet-4-5 | Use Sonnet in Cursor |
+| Macro | claude-sonnet-4-5 | Use Sonnet in Cursor |
+| Bull | claude-haiku-4-5-20251001 | Haiku sufficient in Cursor |
+| Bear | claude-haiku-4-5-20251001 | Haiku sufficient in Cursor |
+| Sentiment | claude-haiku-4-5-20251001 | Haiku sufficient in Cursor |
+| Quant | claude-haiku-4-5-20251001 | Haiku sufficient in Cursor |
+| Risk | NO MODEL | No Anthropic calls ever |
+
+### Session reminders — say this at the start of each task
+
+When starting work on Orchestrator or Macro code, say:
+> "This component uses claude-sonnet-4-5. Please ensure Sonnet is selected in the
+> Cursor model dropdown before we proceed. Working with the wrong model here will
+> reduce synthesis quality."
+
+When starting work on Bull, Bear, Sentiment, or Quant code, say:
+> "This component uses claude-haiku-4-5-20251001. If you have Sonnet selected in
+> Cursor you can switch down to Haiku to reduce cost — the task does not require
+> Sonnet-level reasoning."
+
+When starting work on Risk Agent code, say:
+> "Risk Agent is a deterministic rules engine. Zero LLM calls. Zero Anthropic imports.
+> Proceeding with pure logic only. Flag immediately if any Anthropic reference appears."
+
+### Violation flags — treat these as bugs, not warnings
+- Model string hardcoded anywhere other than /config/models.js → BUG
+- Any Anthropic import or API call inside /agents/risk/ → CRITICAL BUG
+- max_tokens set inline rather than from TOKEN_BUDGETS → BUG
+- Agent response not validated against AGENT_OUTPUT_SCHEMA before Supabase write → BUG
+
+---
+
+## Folder Structure — Follow Exactly
+
+```
+/config
+  models.js                       SINGLE SOURCE OF TRUTH for all model assignments
+/octobot                          OctoBot Docker config
+/agents
+  /bull                           claude-haiku-4-5-20251001
+  /bear                           claude-haiku-4-5-20251001
+  /quant                          Deterministic + Haiku for output formatting only
+  /macro                          claude-sonnet-4-5
+  /sentiment
+    news-sentinel.js              Reactive: CryptoPanic + X.com watchlist
+    crowd-thermometer.js          Ambient: Fear & Greed Index + Reddit
+  /risk
+    index.js                      Rules engine entry point — NO LLM
+    rules.js                      ALL risk rules defined here. Single source of truth.
+/orchestrator
+  index.js                        Main deliberation engine — claude-sonnet-4-5
+  debate.js                       Round 2 rebuttal logic
+  synthesise.js                   Final decision synthesis
+  logger.js                       Writes every deliberation round to Supabase
+/webhook
+  index.js                        Receives and validates TradingView alerts
+/dashboard
+  /src
+    /components
+      Portfolio.jsx
+      DeliberationLog.jsx
+      AgentVotes.jsx
+      SignalHistory.jsx
+      AgentReputation.jsx
+    /lib
+      supabase.js
+/supabase
+  /migrations
+    001_signals.sql
+    002_deliberations.sql
+    003_trades.sql
+    004_agent_reputation.sql
+/scripts
+  reflection-agent.js             Nightly job — reviews trades, updates agent reputation scores
+```
+
+---
+
+## Absolute Rules — Never Violate
+
+1. **Paper trading is enforced at the OctoBot config level.** Not just in application logic. There must be no code path that can execute a live trade during Phase 1, 2, or 3.
+
+2. **Every agent output must be written to Supabase before the Orchestrator reads it.** No in-memory-only deliberations. If it isn't in the database, it didn't happen.
+
+3. **Risk Agent veto is unconditional.** No code path, no conditional, no flag bypasses the Risk Agent. If Risk says no, the trade does not happen. No exceptions.
+
+4. **Risk Agent uses no LLM.** All logic lives in `/agents/risk/rules.js`. It is a deterministic rules engine. Do not add any Anthropic API calls to the risk agent under any circumstances.
+
+5. **All API keys are Railway environment variables.** Never hardcode credentials. Never commit secrets to the repository. Always reference `process.env.VARIABLE_NAME`.
+
+6. **The debate round is not optional.** Bull Agent must read Bear Agent's Round 1 output before submitting Round 2 rebuttal, and vice versa. Do not short-circuit or skip Round 2.
+
+7. **Do not modify the Supabase schema** without creating a new numbered migration file in `/supabase/migrations/`. Never alter tables directly.
+
+8. **All model strings live in /config/models.js only.** Never hardcode inline. Always import. See MODEL ROUTING section above.
+
+---
+
+## Deliberation Flow — Understand Before Touching Orchestrator
+
+Every TradingView signal triggers this exact sequence. Do not deviate from it.
+
+```
+STEP 1 — SIGNAL RECEIVED
+  Webhook receives TradingView alert
+  Signal validated and written to signals table in Supabase
+  Orchestrator notified
+
+STEP 2 — ROUND 1 (parallel, target under 5 seconds total)
+  Bull, Bear, Quant, Macro, Sentiment agents all run simultaneously
+  Each returns: { score: 0-100, thesis: string, data: object }
+  All five outputs validated against AGENT_OUTPUT_SCHEMA from /config/models.js
+  All five outputs written to Supabase before Round 2 begins
+
+STEP 3 — ROUND 2 (structured debate)
+  Bull Agent receives Bear Agent's Round 1 thesis → returns rebuttal
+  Bear Agent receives Bull Agent's Round 1 thesis → returns rebuttal
+  Quant Agent checks if Sentiment score is consistent with statistical model
+  All rebuttals written to Supabase
+
+STEP 4 — ROUND 3 (Orchestrator synthesis)
+  Orchestrator receives all Round 1 outputs + Round 2 rebuttals
+  Classifies vote result: unanimous | divided | contested
+  Writes reasoning to deliberations table
+  Uses claude-sonnet-4-5 via MODELS.orchestrator from /config/models.js
+
+STEP 5 — RISK CHECK
+  Risk Agent receives proposed trade + current portfolio state from Supabase
+  Returns: { approved: boolean, positionSizePct: number, reason: string }
+  If approved: trade instruction sent to OctoBot
+  If vetoed: no trade, veto reason logged
+  Risk Agent makes zero LLM calls — pure rules engine
+
+STEP 6 — LOGGING
+  Complete deliberation record finalised in deliberations table
+  Includes all agent outputs, rebuttals, Orchestrator reasoning, Risk decision
+```
+
+---
+
+## Supabase Tables — Schema Reference
+
+### signals
+```sql
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+received_at     TIMESTAMPTZ DEFAULT now()
+asset           TEXT NOT NULL           -- e.g. BTC/USDT
+direction       TEXT NOT NULL           -- long | short | close
+timeframe       TEXT                    -- e.g. 1h, 4h, 1d
+signal_type     TEXT                    -- e.g. MACD crossover
+raw_payload     JSONB                   -- full TradingView webhook JSON
+```
+
+### deliberations
+```sql
+id                      UUID PRIMARY KEY DEFAULT gen_random_uuid()
+signal_id               UUID REFERENCES signals(id)
+started_at              TIMESTAMPTZ DEFAULT now()
+bull_score              INT
+bull_thesis             TEXT
+bear_score              INT
+bear_thesis             TEXT
+bull_rebuttal           TEXT
+bear_rebuttal           TEXT
+quant_ev                NUMERIC
+quant_data              JSONB
+macro_regime            TEXT            -- risk-on | risk-off | neutral
+macro_flag              BOOLEAN
+sentiment_score         INT
+sentiment_summary       TEXT
+news_interrupt          BOOLEAN DEFAULT false
+risk_approved           BOOLEAN
+position_size_pct       NUMERIC
+final_decision          TEXT            -- trade | hold | veto
+orchestrator_reasoning  TEXT
+outcome                 TEXT            -- filled after trade closes
+pnl_pct                 NUMERIC         -- filled after trade closes
+```
+
+### trades
+```sql
+id                  UUID PRIMARY KEY DEFAULT gen_random_uuid()
+deliberation_id     UUID REFERENCES deliberations(id)
+entry_price         NUMERIC
+entry_time          TIMESTAMPTZ DEFAULT now()
+exit_price          NUMERIC
+exit_time           TIMESTAMPTZ
+position_size_usd   NUMERIC
+pnl_usd             NUMERIC
+pnl_pct             NUMERIC
+mode                TEXT DEFAULT 'paper'    -- paper | live
+exchange            TEXT
+```
+
+### agent_reputation
+```sql
+id                      UUID PRIMARY KEY DEFAULT gen_random_uuid()
+agent_name              TEXT            -- bull | bear | quant | macro | sentiment
+week_ending             DATE
+dissent_correct_rate    NUMERIC
+overall_accuracy        NUMERIC
+current_weight          NUMERIC DEFAULT 1.0
+trades_sampled          INT
+```
+
+---
+
+## Environment Variables
+
+Reference these exactly. Never invent new variable names without updating this file.
+
+```
+ANTHROPIC_API_KEY
+SUPABASE_URL
+SUPABASE_SERVICE_KEY
+TRADINGVIEW_WEBHOOK_SECRET
+EXCHANGE_API_KEY
+EXCHANGE_API_SECRET
+CRYPTOPANIC_API_KEY
+TWITTER_BEARER_TOKEN            Phase 2+
+GLASSNODE_API_KEY
+RAILWAY_ENVIRONMENT             paper | live — used to gate any real trading logic
+```
+
+---
+
+## Current Build Phase
+
+**PHASE 1 — FOUNDATION**
+
+Build only what is listed here. Do not build Phase 2 features until Phase 1 is stable.
+
+- [ ] /config/models.js created and imported correctly in at least one agent as proof of pattern
+- [ ] OctoBot deployed on Railway via Docker in paper trading mode
+- [ ] TradingView webhook handler live and receiving alerts
+- [ ] Supabase migrations for all four tables created and applied
+- [ ] Signals logging to Supabase on receipt
+- [ ] Basic Risk Agent (rules engine, no LLM) operational
+- [ ] Basic Quant Agent (deterministic calculations) operational
+- [ ] Paper trades logging to Supabase
+
+Phase 2 begins when all Phase 1 checkboxes are complete and signals are logging correctly for 48+ hours.
+
+---
+
+## Code Style
+
+- Async/await throughout — no raw Promise chains
+- Every Supabase write wrapped in try/catch with error logged to console
+- Agent functions must be pure where possible — inputs in, structured output out
+- Validate every agent response against AGENT_OUTPUT_SCHEMA from /config/models.js before writing to Supabase
+- No global state outside of Supabase — treat the database as the single source of truth
+- Comment any non-obvious logic, especially in the deliberation flow and risk rules
+- Keep agent prompt templates in separate prompt.js files — not inline strings
+- Model strings and token budgets always from /config/models.js — never inline
+
+---
+
+## When in Doubt
+
+1. Check ARCHITECTURE.md before making a structural decision
+2. Check /config/models.js before writing any Anthropic API call
+3. If a rule above conflicts with something that seems like a good idea, follow the rule and flag the conflict
+4. If adding a new dependency, state why and wait for confirmation before installing
+5. Never delete or modify existing Supabase migration files — only add new ones
+6. If you see a hardcoded model string outside of /config/models.js, stop and fix it before continuing

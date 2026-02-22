@@ -1,0 +1,148 @@
+'use strict';
+
+const Anthropic = require('@anthropic-ai/sdk');
+const { MODELS, TOKEN_BUDGETS, AGENT_OUTPUT_SCHEMA } = require('../../config/models.js');
+const { buildRound1Prompt, buildRound2Prompt } = require('./prompt.js');
+
+// ── Client ────────────────────────────────────────────────────────────────────
+// Instantiated once at module load. API key sourced from Railway env only.
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ── Output validator ──────────────────────────────────────────────────────────
+// Validates the parsed LLM response against AGENT_OUTPUT_SCHEMA.bear before
+// anything is written to Supabase. Throws on invalid output — never silently swallow.
+function validateOutput(parsed) {
+  const schema = AGENT_OUTPUT_SCHEMA.bear;
+  const errors = [];
+
+  if (typeof parsed.score !== 'number' || parsed.score < 0 || parsed.score > 100) {
+    errors.push(`score must be a number 0-100, got: ${JSON.stringify(parsed.score)}`);
+  }
+  if (typeof parsed.thesis !== 'string' || parsed.thesis.trim().length === 0) {
+    errors.push('thesis must be a non-empty string');
+  }
+  if (!parsed.data || typeof parsed.data !== 'object') {
+    errors.push('data must be an object');
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      `[bear] Output validation failed against AGENT_OUTPUT_SCHEMA.${Object.keys(schema).join('/')}:\n  ${errors.join('\n  ')}`
+    );
+  }
+}
+
+// ── LLM call ──────────────────────────────────────────────────────────────────
+// Sends one prompt pair to the Anthropic API and returns the parsed JSON output.
+// Model and token budget are always sourced from config/models.js — never inline.
+async function callLLM(system, user) {
+  const response = await anthropic.messages.create({
+    model:      MODELS.bear,          // ← from config/models.js only
+    max_tokens: TOKEN_BUDGETS.bear,   // ← from config/models.js only
+    system,
+    messages: [{ role: 'user', content: user }],
+  });
+
+  const raw = response.content[0]?.text ?? '';
+
+  let parsed;
+  try {
+    // Strip accidental markdown fences if the model wraps its JSON
+    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    parsed = JSON.parse(clean);
+  } catch {
+    throw new Error(`[bear] LLM returned non-JSON output:\n${raw}`);
+  }
+
+  return parsed;
+}
+
+// ── Round 1: independent analysis ────────────────────────────────────────────
+// Contrarian analysis of the incoming signal. Looks for reasons NOT to trade.
+//
+// @param {object}   marketData
+// @param {string}   marketData.asset                 — e.g. 'BTC/USDT'
+// @param {number}   marketData.currentPrice          — current asset price in USD
+// @param {number}   marketData.rsi                   — RSI (0-100)
+// @param {string}   marketData.macd                  — 'bullish_crossover' | 'bearish_crossover' | 'neutral'
+// @param {number}   marketData.fundingRate           — perpetual funding rate as a decimal (e.g. 0.0003)
+// @param {number}   marketData.fearGreedIndex        — 0-100 (0 = extreme fear, 100 = extreme greed)
+// @param {number[]} marketData.recentRejectionLevels — price levels where the asset has recently rejected
+//
+// @returns {Promise<{ score: number, thesis: string, data: object }>}
+async function analyseRound1(marketData) {
+  console.log(`[bear] Round 1 — analysing ${marketData.asset} @ $${marketData.currentPrice}`);
+
+  const { system, user } = buildRound1Prompt(marketData);
+
+  let parsed;
+  try {
+    parsed = await callLLM(system, user);
+  } catch (err) {
+    console.error(`[bear] Round 1 LLM call failed: ${err.message}`);
+    throw err;
+  }
+
+  try {
+    validateOutput(parsed);
+  } catch (err) {
+    console.error(err.message);
+    throw err;
+  }
+
+  // Ensure score is an integer
+  parsed.score = Math.round(parsed.score);
+
+  console.log(`[bear] Round 1 complete — score=${parsed.score} thesis="${parsed.thesis.slice(0, 80)}..."`);
+
+  return {
+    score:  parsed.score,
+    thesis: parsed.thesis,
+    data:   parsed.data ?? {},
+  };
+}
+
+// ── Round 2: rebuttal of Bull thesis ─────────────────────────────────────────
+// Reads the Bull Agent's Round 1 thesis and submits a contrarian rebuttal.
+// This round is mandatory — the Orchestrator must not skip it.
+//
+// @param {object} marketData  — same shape as Round 1
+// @param {string} bullThesis  — Bull Agent's Round 1 thesis (read from Supabase)
+//
+// @returns {Promise<{ score: number, thesis: string, data: object }>}
+async function analyseRound2(marketData, bullThesis) {
+  if (!bullThesis || typeof bullThesis !== 'string' || bullThesis.trim().length === 0) {
+    throw new Error('[bear] Round 2 requires a non-empty bullThesis. Bull Agent output must be written to Supabase before Round 2 begins.');
+  }
+
+  console.log(`[bear] Round 2 — rebutting Bull thesis for ${marketData.asset}`);
+
+  const { system, user } = buildRound2Prompt(marketData, bullThesis);
+
+  let parsed;
+  try {
+    parsed = await callLLM(system, user);
+  } catch (err) {
+    console.error(`[bear] Round 2 LLM call failed: ${err.message}`);
+    throw err;
+  }
+
+  try {
+    validateOutput(parsed);
+  } catch (err) {
+    console.error(err.message);
+    throw err;
+  }
+
+  parsed.score = Math.round(parsed.score);
+
+  console.log(`[bear] Round 2 complete — score=${parsed.score} thesis="${parsed.thesis.slice(0, 80)}..."`);
+
+  return {
+    score:  parsed.score,
+    thesis: parsed.thesis,
+    data:   parsed.data ?? {},
+  };
+}
+
+module.exports = { analyseRound1, analyseRound2 };

@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  octobot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cryptoquant-octobot
+    container_name: octobot
+    restart: unless-stopped
+
+    ports:
+      # OctoBot web UI — http://localhost:5001 for local access.
+      # On Railway, PORT is injected automatically.
+      - "${PORT:-5001}:5001"
+
+    volumes:
+      # Logs and tentacles are ephemeral — config is baked into the image.
+      # Do NOT mount user_data/config here; that would shadow the paper trading config.
+      - octobot_logs:/octobot/logs
+      - octobot_tentacles:/octobot/tentacles
+
+    environment:
+      # Exchange API credentials — sourced from Railway environment variables only.
+      # These are only used by OctoBot for market data. Real trading is disabled in
+      # user_data/config/config.json regardless of whether these are set.
+      - EXCHANGE_API_KEY=${EXCHANGE_API_KEY}
+      - EXCHANGE_API_SECRET=${EXCHANGE_API_SECRET}
+
+      # Passed through for logging and any environment-aware logic.
+      - RAILWAY_ENVIRONMENT=${RAILWAY_ENVIRONMENT:-paper}
+
+volumes:
+  octobot_logs:
+  octobot_tentacles:
