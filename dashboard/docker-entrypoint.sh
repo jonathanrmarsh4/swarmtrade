@@ -4,24 +4,48 @@
 
 set -e
 
-echo "Injecting runtime environment variables..."
+echo "================================================"
+echo "SwarmTrade Dashboard - Runtime Configuration"
+echo "================================================"
+
+# Check if env vars are set
+if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+    echo "ERROR: Required environment variables are not set!"
+    echo "VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-NOT SET}"
+    echo "VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:+SET (hidden)}"
+    echo "Please set these in Railway dashboard."
+    exit 1
+fi
+
+echo "Environment variables detected:"
+echo "VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}"
+echo "VITE_SUPABASE_ANON_KEY: SET (hidden)"
 
 # Find the main JS file in the dist directory
-MAIN_JS=$(find /usr/share/nginx/html/assets -name 'index-*.js' | head -1)
+echo "Searching for JS bundle..."
+MAIN_JS=$(find /usr/share/nginx/html/assets -name 'index-*.js' 2>/dev/null | head -1)
 
 if [ -z "$MAIN_JS" ]; then
-    echo "ERROR: Could not find main JS file"
+    echo "ERROR: Could not find main JS file in /usr/share/nginx/html/assets"
+    ls -la /usr/share/nginx/html/assets/ || echo "Assets directory not found"
     exit 1
 fi
 
 echo "Found JS bundle: $MAIN_JS"
 
-# Replace placeholders with actual env var values
-sed -i "s|__VITE_SUPABASE_URL__|${VITE_SUPABASE_URL}|g" "$MAIN_JS"
-sed -i "s|__VITE_SUPABASE_ANON_KEY__|${VITE_SUPABASE_ANON_KEY}|g" "$MAIN_JS"
+# Check if placeholders exist in the bundle
+if grep -q "__VITE_SUPABASE_URL__" "$MAIN_JS"; then
+    echo "Replacing placeholders with runtime values..."
+    sed -i "s|__VITE_SUPABASE_URL__|${VITE_SUPABASE_URL}|g" "$MAIN_JS"
+    sed -i "s|__VITE_SUPABASE_ANON_KEY__|${VITE_SUPABASE_ANON_KEY}|g" "$MAIN_JS"
+    echo "✓ Environment variables injected successfully"
+else
+    echo "Note: Placeholders not found - build-time env vars may have been used"
+fi
 
-echo "Environment variables injected successfully"
+echo "================================================"
 echo "Starting nginx..."
+echo "================================================"
 
 # Start nginx
 exec nginx -g 'daemon off;'
