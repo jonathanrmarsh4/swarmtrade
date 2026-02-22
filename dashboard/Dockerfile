@@ -6,11 +6,11 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Install dependencies
-COPY package*.json ./
+COPY dashboard/package*.json ./
 RUN npm ci --only=production
 
 # Copy source and build
-COPY . .
+COPY dashboard/ .
 
 # Vite build requires env vars at build time (they're baked into the bundle)
 ARG VITE_SUPABASE_URL
@@ -27,7 +27,7 @@ FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy nginx config for SPA routing
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY dashboard/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
