@@ -1,4 +1,4 @@
-# AI Trading Swarm — Cursor Rules
+# SwarmTrade — Cursor Rules
 
 ## READ FIRST
 You are building a multi-agent AI committee system for autonomous cryptocurrency paper trading.
@@ -266,6 +266,7 @@ ANTHROPIC_API_KEY
 SUPABASE_URL
 SUPABASE_SERVICE_KEY
 TRADINGVIEW_WEBHOOK_SECRET
+OCTOBOT_WEBHOOK_URL             OctoBot internal webhook endpoint — used by /orchestrator/executor.js
 EXCHANGE_API_KEY
 EXCHANGE_API_SECRET
 CRYPTOPANIC_API_KEY

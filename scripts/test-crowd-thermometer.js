@@ -81,7 +81,7 @@ async function testReddit() {
     const response = await fetch(url, {
       headers: {
         'Accept':     'application/json',
-        'User-Agent': 'CryptoQuant-SentimentAgent/1.0 (autonomous paper-trading system)',
+        'User-Agent': 'SwarmTrade-SentimentAgent/1.0 (autonomous paper-trading system)',
       },
       signal: AbortSignal.timeout(10_000),
     });

@@ -1,17 +1,21 @@
 'use strict';
 
-// Load .env in local development — Railway injects env vars directly in production.
+// Load .env in local dev. Railway injects env vars directly in production.
 require('dotenv').config();
 
-// ── Environment variable validation ───────────────────────────────────────────
-// Fail fast and list every missing variable in a single log line so a single
-// deploy log is enough to diagnose the problem.
+const http = require('http');
+
+// ── Step 1: Environment variable validation ───────────────────────────────────
+// Fail fast before any service starts. All missing variables are listed together
+// so a single deploy log is enough to diagnose the problem.
 
 const REQUIRED_ENV = [
   'ANTHROPIC_API_KEY',
   'SUPABASE_URL',
   'SUPABASE_SERVICE_KEY',
   'TRADINGVIEW_WEBHOOK_SECRET',
+  'OCTOBOT_WEBHOOK_URL',
+  'RAILWAY_ENVIRONMENT',
 ];
 
 const missing = REQUIRED_ENV.filter(key => !process.env[key]);
@@ -22,42 +26,125 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-console.log('[startup] Environment variables validated ✓');
+console.log('[startup] Environment variables validated \u2713');
 
-// ── RAILWAY_ENVIRONMENT guard ─────────────────────────────────────────────────
-// Warn loudly if the environment is not 'paper'. Paper trading is also enforced
-// at the OctoBot config level — this is an additional belt-and-suspenders check.
 
-if (process.env.RAILWAY_ENVIRONMENT && process.env.RAILWAY_ENVIRONMENT !== 'paper') {
+// ── Step 2: RAILWAY_ENVIRONMENT guard ─────────────────────────────────────────
+// Warn if not 'paper' but do not exit — the same boot path serves future live mode.
+// Paper-trading is also enforced at the OctoBot config level (belt and suspenders).
+
+if (process.env.RAILWAY_ENVIRONMENT !== 'paper') {
   console.warn(
     `[startup] WARNING: RAILWAY_ENVIRONMENT is '${process.env.RAILWAY_ENVIRONMENT}'. ` +
     `Expected 'paper'. Confirm OctoBot is in paper trading mode before proceeding.`,
   );
 } else {
-  console.log(`[startup] RAILWAY_ENVIRONMENT=${process.env.RAILWAY_ENVIRONMENT || 'local'} ✓`);
+  console.log(`[startup] RAILWAY_ENVIRONMENT=paper confirmed \u2713`);
 }
 
-// ── Bootstrap webhook server ──────────────────────────────────────────────────
-// webhook/index.js binds to PORT on require. It handles:
-//   GET  /health         — Railway health check
-//   POST /webhook        — TradingView alerts
-// All other routes return 404.
 
-require('./webhook/index.js');
+// ── Step 3: Sentiment agents ──────────────────────────────────────────────────
+// Starts two non-blocking background polling loops:
+//   Crowd Thermometer — polls Fear & Greed Index + Reddit every 30 minutes
+//   News Sentinel     — polls CryptoPanic every 2 minutes; fires interrupt on breaking news
+//
+// Must boot before the webhook server so a sentiment snapshot exists at the first
+// deliberation instead of returning a neutral fallback.
+
+const { startSentimentAgents } = require('./agents/sentiment/index.js');
+startSentimentAgents();
+console.log('[startup] Sentiment agents started \u2014 Crowd Thermometer and News Sentinel active');
+
+
+// ── Step 4: Trade monitor cron ────────────────────────────────────────────────
+// Polls the trades table every 60 seconds for open positions that may need
+// attention: stop-loss / take-profit detection, stale position alerts.
+
+const { start: startTradeMonitor } = require('./scripts/trade-monitor.js');
+startTradeMonitor();
+console.log('[startup] Trade monitor started \u2014 checking open positions every 60 seconds');
+
+
+// ── Step 5: Reflection agent nightly cron ─────────────────────────────────────
+// Schedules a midnight cron that reviews the week's closed trades, recalculates
+// accuracy scores per agent, and updates agent_reputation weights used by the
+// Orchestrator to calibrate vote influence over time.
+
+const { schedule: scheduleReflectionAgent } = require('./scripts/reflection-agent.js');
+scheduleReflectionAgent();
+console.log('[startup] Reflection agent scheduled \u2014 runs nightly at 00:00');
+
+
+// ── Step 6: HTTP server ───────────────────────────────────────────────────────
+// One server handles both the TradingView webhook and the health endpoint.
+// Webhook logic (secret validation, signal write, deliberation trigger) is fully
+// encapsulated in webhook/index.js — this file only owns routing and server lifecycle.
+
+const { handleRequest: handleWebhook } = require('./webhook/index.js');
+
+const PORT = process.env.PORT || 3000;
+
+const server = http.createServer((req, res) => {
+  // Health check — Railway and external uptime monitors poll this endpoint.
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status:      'ok',
+      environment: process.env.RAILWAY_ENVIRONMENT,
+      uptime:      process.uptime(),
+      timestamp:   new Date(),
+    }));
+    return;
+  }
+
+  // All other routes delegated to the webhook handler.
+  // handleWebhook accepts POST /webhook/tradingview; returns 404 for anything else.
+  handleWebhook(req, res).catch(err => {
+    console.error('[server] Unhandled error in request handler:', err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal server error' }));
+    }
+  });
+});
+
+server.listen(PORT, () => {
+  // ── Step 7: Startup summary ───────────────────────────────────────────────
+  const env  = process.env.RAILWAY_ENVIRONMENT ?? 'unknown';
+  const mode = env === 'paper' ? 'PAPER TRADING (safe)' : env.toUpperCase();
+
+  console.log('');
+  console.log('\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510');
+  console.log('\u2502             SwarmTrade \u2014 Online                  \u2502');
+  console.log('\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524');
+  console.log(`\u2502  Mode         : ${mode.padEnd(33)}\u2502`);
+  console.log(`\u2502  Port         : ${String(PORT).padEnd(33)}\u2502`);
+  console.log('\u2502  Webhook      : POST /webhook/tradingview        \u2502');
+  console.log('\u2502  Health       : GET  /health                     \u2502');
+  console.log('\u2502  Agents       : Bull \u00b7 Bear \u00b7 Quant \u00b7 Macro      \u2502');
+  console.log('\u2502                 Sentiment \u00b7 Risk (rules engine)  \u2502');
+  console.log('\u2502  Sentiment    : Crowd Thermometer + News Sentinel\u2502');
+  console.log('\u2502  Trade mon    : every 60 s                       \u2502');
+  console.log('\u2502  Reflection   : nightly at 00:00                 \u2502');
+  console.log('\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518');
+  console.log('');
+});
+
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
-// Railway sends SIGTERM before stopping a container. The webhook server handles
-// in-flight requests; we just need to ensure the process exits cleanly.
+// Railway sends SIGTERM before stopping a container. Close the HTTP server so
+// in-flight requests complete, then let the process exit naturally.
 
 process.on('SIGTERM', () => {
-  console.log('[startup] SIGTERM received — shutting down gracefully.');
-  // webhook/index.js owns the server instance; it will drain and close.
-  // Give in-flight deliberations up to 10 s to complete before hard exit.
-  setTimeout(() => process.exit(0), 10_000);
+  console.log('[startup] SIGTERM received \u2014 shutting down gracefully...');
+  server.close(() => {
+    console.log('[startup] HTTP server closed. Exiting.');
+    process.exit(0);
+  });
 });
 
 process.on('uncaughtException', (err) => {
-  console.error('[startup] Uncaught exception — process will exit:', err);
+  console.error('[startup] Uncaught exception \u2014 process will exit:', err);
   process.exit(1);
 });
 

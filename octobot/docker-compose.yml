@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: cryptoquant-octobot
+    image: swarmtrade-octobot
     container_name: octobot
     restart: unless-stopped
 

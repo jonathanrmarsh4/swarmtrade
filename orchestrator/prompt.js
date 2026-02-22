@@ -71,12 +71,14 @@ Rules:
 // @param {number} preComputed.scoreRange              — max minus min across normalized support scores
 // @param {string[]} preComputed.activeVetoConditions  — triggered veto reasons (empty if none)
 // @param {object} preComputed.normalizedScores        — { bull, bear, quant, macro, sentiment } (0-100)
+// @param {object} preComputed.weights                 — { bull, bear, quant, macro, sentiment } — agent reputation weights
+// @param {object} preComputed.weightedScores          — { bull, bear, quant, macro, sentiment } — normalized scores × weights
 //
 // @returns {{ system: string, user: string }}
 function buildSynthesisPrompt(round1Results, round2Results, preComputed) {
   const { signal, bull, bear, quant, macro, sentiment } = round1Results;
   const { bullRebuttal, bearRebuttal } = round2Results;
-  const { voteClassification, scoreRange, activeVetoConditions, normalizedScores } = preComputed;
+  const { voteClassification, scoreRange, activeVetoConditions, normalizedScores, weights, weightedScores } = preComputed;
 
   const bullDelta    = bullRebuttal.score - bull.score;
   const bearDelta    = bearRebuttal.score - bear.score;
@@ -97,6 +99,25 @@ function buildSynthesisPrompt(round1Results, round2Results, preComputed) {
 
   const evSign = quant.expectedValue >= 0 ? '+' : '';
 
+  // Build agent reputation weights context
+  const weightsContext = `
+── AGENT REPUTATION WEIGHTS (based on historical performance) ────────────────
+
+Agent vote weights derived from weekly reputation analysis:
+  Bull:      ${weights.bull.toFixed(2)}  ${weights.bull > 1.0 ? '(strong track record)' : weights.bull < 1.0 ? '(underperforming)' : '(baseline)'}
+  Bear:      ${weights.bear.toFixed(2)}  ${weights.bear > 1.0 ? '(strong track record)' : weights.bear < 1.0 ? '(underperforming)' : '(baseline)'}
+  Quant:     ${weights.quant.toFixed(2)}  ${weights.quant > 1.0 ? '(strong track record)' : weights.quant < 1.0 ? '(underperforming)' : '(baseline)'}
+  Macro:     ${weights.macro.toFixed(2)}  ${weights.macro > 1.0 ? '(strong track record)' : weights.macro < 1.0 ? '(underperforming)' : '(baseline)'}
+  Sentiment: ${weights.sentiment.toFixed(2)}  ${weights.sentiment > 1.0 ? '(strong track record)' : weights.sentiment < 1.0 ? '(underperforming)' : '(baseline)'}
+
+Weight > 1.0 means this agent has shown strong signal quality in recent trades.
+Weight < 1.0 means this agent has underperformed. Consider these weights when
+synthesising the final decision — agents with proven track records should carry
+more influence in close calls or divided votes.
+
+Weighted support scores (normalized score × reputation weight):
+  bull=${weightedScores.bull.toFixed(1)}  bear=${weightedScores.bear.toFixed(1)}  quant=${weightedScores.quant.toFixed(1)}  macro=${weightedScores.macro.toFixed(1)}  sentiment=${weightedScores.sentiment.toFixed(1)}`;
+
   const userMessage = `Synthesise the following committee deliberation and issue a final trade decision as JSON.
 
 SIGNAL
@@ -107,18 +128,18 @@ SIGNAL
 
 ── ROUND 1: INDEPENDENT ANALYSIS ────────────────────────────────────────────
 
-BULL AGENT    score=${bull.score}/100   normalized_support=${normalizedScores.bull}/100
+BULL AGENT    score=${bull.score}/100   normalized_support=${normalizedScores.bull}/100   weight=${weights.bull.toFixed(2)}
   "${bull.thesis}"
 
-BEAR AGENT    score=${bear.score}/100   normalized_support=${normalizedScores.bear}/100
+BEAR AGENT    score=${bear.score}/100   normalized_support=${normalizedScores.bear}/100   weight=${weights.bear.toFixed(2)}
   "${bear.thesis}"
 
-QUANT AGENT   EV=${evSign}${quant.expectedValue.toFixed(4)}  winRate=${(quant.winRate * 100).toFixed(1)}%  n=${quant.sampleSize}  rec=${quant.recommendation.toUpperCase()}   normalized_support=${normalizedScores.quant}/100
+QUANT AGENT   EV=${evSign}${quant.expectedValue.toFixed(4)}  winRate=${(quant.winRate * 100).toFixed(1)}%  n=${quant.sampleSize}  rec=${quant.recommendation.toUpperCase()}   normalized_support=${normalizedScores.quant}/100   weight=${weights.quant.toFixed(2)}
 
-MACRO AGENT   regime=${macro.regime}   flag=${macro.flag}   normalized_support=${normalizedScores.macro}/100
+MACRO AGENT   regime=${macro.regime}   flag=${macro.flag}   normalized_support=${normalizedScores.macro}/100   weight=${weights.macro.toFixed(2)}
   "${macro.summary}"
 
-SENTIMENT     score=${sentiment.score}/100   newsInterrupt=${sentiment.newsInterrupt}   normalized_support=${normalizedScores.sentiment}/100
+SENTIMENT     score=${sentiment.score}/100   newsInterrupt=${sentiment.newsInterrupt}   normalized_support=${normalizedScores.sentiment}/100   weight=${weights.sentiment.toFixed(2)}
   "${sentiment.summary}"
 
 ── ROUND 2: REBUTTALS ────────────────────────────────────────────────────────
@@ -128,11 +149,12 @@ BULL REBUTTAL   score change: ${bull.score} → ${bullRebuttal.score}  (${bullDe
 
 BEAR REBUTTAL   score change: ${bear.score} → ${bearRebuttal.score}  (${bearDeltaStr} points)
   "${bearRebuttal.thesis}"
+${weightsContext}
 
 ── PRE-COMPUTED VOTE METRICS ─────────────────────────────────────────────────
 
   Vote classification:    ${voteClassification.toUpperCase()}
-  Normalized score range: ${scoreRange} points  (unanimous threshold: <20,  contested threshold: >40)
+  Normalized score range: ${scoreRange.toFixed(1)} points  (unanimous threshold: <20,  contested threshold: >40)
   Support scores (0-100, direction=${signal.direction}):
     bull=${normalizedScores.bull}  bear=${normalizedScores.bear}  quant=${normalizedScores.quant}  macro=${normalizedScores.macro}  sentiment=${normalizedScores.sentiment}
 

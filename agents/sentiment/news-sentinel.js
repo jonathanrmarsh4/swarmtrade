@@ -69,7 +69,7 @@ async function fetchCryptoPanicNews() {
   url.searchParams.set('public', 'true');
 
   const response = await fetch(url.toString(), {
-    headers: { 'User-Agent': 'CryptoQuant-Swarm/1.0 (news-sentinel)' },
+    headers: { 'User-Agent': 'SwarmTrade/1.0 (news-sentinel)' },
     signal: AbortSignal.timeout(10_000),
   });
 

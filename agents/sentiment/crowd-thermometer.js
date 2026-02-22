@@ -66,7 +66,7 @@ function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.get(
       url,
-      { headers: { 'User-Agent': 'CryptoQuant-Swarm/1.0 (crowd-thermometer)' } },
+      { headers: { 'User-Agent': 'SwarmTrade/1.0 (crowd-thermometer)' } },
       (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });

@@ -1,4 +1,4 @@
-# AI Trading Swarm — Architecture
+# SwarmTrade — Architecture
 
 ## Overview
 

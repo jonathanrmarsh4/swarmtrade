@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    background-color: #0D1B2A;
+    color: #f8fafc;
+    font-family: 'Inter', 'SF Pro Display', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0D1B2A;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #1e3a52;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2a4f6e;
+  }
+}
+
+@layer components {
+  /* Reusable panel card */
+  .panel {
+    @apply bg-[#112233] border border-[#1e3a52] rounded-xl;
+  }
+
+  /* Subtle grid texture for the app background */
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Live pulse indicator */
+  .pulse-dot {
+    @apply w-2 h-2 rounded-full bg-accent-green;
+    animation: pulse-ring 2s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse-ring {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  @apply inline-block w-4 h-4 rounded-full border-2 border-[#1e3a52] border-t-[#60a5fa];
+  animation: spin 0.8s linear infinite;
+}

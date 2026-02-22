@@ -1,4 +1,4 @@
-# CryptoQuant — AI Trading Swarm
+# SwarmTrade
 
 A multi-agent AI committee system for autonomous cryptocurrency paper trading. Six specialist AI agents — Bull, Bear, Quant, Macro, Sentiment, and Risk Management — deliberate on incoming trade signals from TradingView. A central Orchestrator agent synthesises their analysis across three structured rounds of debate before issuing a final trade decision. The system is enforced to run in paper (simulated) trading mode throughout validation, with no real capital deployed until strict performance criteria are met.
 
@@ -32,7 +32,7 @@ Set these in your Railway service settings. Never commit values to the repositor
 ```bash
 # 1. Clone the repository
 git clone <repo-url>
-cd CryptoQuant
+cd SwarmTrade
 
 # 2. Install dependencies
 npm install
