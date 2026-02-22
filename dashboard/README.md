@@ -2,6 +2,8 @@
 
 React dashboard for monitoring the SwarmTrade AI agent committee system.
 
+## Quick Start
+
 ## Features
 
 - **Portfolio View** — Real-time P&L, open positions, trade history
