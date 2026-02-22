@@ -1,0 +1,13 @@
+# Railway monorepo configuration
+# Helps Railway detect multiple services in one repo
+
+[[services]]
+name = "backend"
+dockerfile = "Dockerfile"
+startCommand = "node index.js"
+healthcheckPath = "/health"
+
+[[services]]
+name = "dashboard"
+dockerfile = "dashboard/Dockerfile"
+healthcheckPath = "/health"
