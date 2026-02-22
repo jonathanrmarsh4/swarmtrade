@@ -8,6 +8,10 @@ echo "================================================"
 echo "SwarmTrade Dashboard - Runtime Configuration"
 echo "================================================"
 
+# Railway provides PORT env var - use it if available, otherwise default to 80
+NGINX_PORT=${PORT:-80}
+echo "Port configuration: ${NGINX_PORT}"
+
 # Check if env vars are set
 if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
     echo "ERROR: Required environment variables are not set!"
@@ -20,6 +24,12 @@ fi
 echo "Environment variables detected:"
 echo "VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}"
 echo "VITE_SUPABASE_ANON_KEY: SET (hidden)"
+
+# Update nginx to listen on Railway's PORT
+if [ "$NGINX_PORT" != "80" ]; then
+    echo "Configuring nginx to listen on port ${NGINX_PORT}..."
+    sed -i "s|listen 80;|listen ${NGINX_PORT};|g" /etc/nginx/conf.d/default.conf
+fi
 
 # Find the main JS file in the dist directory
 echo "Searching for JS bundle..."
@@ -44,7 +54,7 @@ else
 fi
 
 echo "================================================"
-echo "Starting nginx..."
+echo "Starting nginx on port ${NGINX_PORT}..."
 echo "================================================"
 
 # Start nginx
