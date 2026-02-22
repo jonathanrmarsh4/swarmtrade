@@ -13,15 +13,13 @@ RUN npm ci
 COPY dashboard/ .
 
 # Vite build requires env vars at build time (they're baked into the bundle)
+# If not available at build time, placeholders will be replaced at runtime
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
-# Debug: Show if env vars are set (Railway logs will show this)
-RUN echo "Building with VITE_SUPABASE_URL=${VITE_SUPABASE_URL:0:30}..." && \
-    echo "VITE_SUPABASE_ANON_KEY is ${VITE_SUPABASE_ANON_KEY:+SET}" && \
-    npm run build
+RUN npm run build
 
 # Production stage - serve with nginx
 FROM nginx:alpine
@@ -32,6 +30,10 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy nginx config for SPA routing
 COPY dashboard/nginx.conf /etc/nginx/conf.d/default.conf
 
+# Copy runtime entrypoint script that injects env vars
+COPY dashboard/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

@@ -8,8 +8,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { useState, useEffect, useCallback } from 'react';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Use placeholders that will be replaced at container startup if build-time vars aren't available
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '__VITE_SUPABASE_URL__';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '__VITE_SUPABASE_ANON_KEY__';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
