@@ -66,13 +66,21 @@ function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.get(
       url,
-      { headers: { 'User-Agent': 'SwarmTrade/1.0 (crowd-thermometer)' } },
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; SwarmTrade/1.0; +https://github.com/swarmtrade)',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      },
       (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
           try { resolve(JSON.parse(body)); }
-          catch (err) { reject(new Error(`JSON parse failed for ${url}: ${err.message}`)); }
+          catch (err) {
+            reject(new Error(`JSON parse failed for ${url}: ${err.message}`));
+          }
         });
       },
     );

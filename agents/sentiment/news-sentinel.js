@@ -24,7 +24,7 @@ const { buildNewsAssessmentPrompt } = require('./prompt.js');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CRYPTOPANIC_URL = 'https://cryptopanic.com/api/v1/posts/';
+const CRYPTOPANIC_URL = 'https://cryptopanic.com/api/free/v1/posts/';
 
 // Only posts CryptoPanic flags as "important" are sent to the LLM.
 // This prevents burning Haiku tokens on routine market chatter.
