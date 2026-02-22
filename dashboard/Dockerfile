@@ -18,7 +18,10 @@ ARG VITE_SUPABASE_ANON_KEY
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
-RUN npm run build
+# Debug: Show if env vars are set (Railway logs will show this)
+RUN echo "Building with VITE_SUPABASE_URL=${VITE_SUPABASE_URL:0:30}..." && \
+    echo "VITE_SUPABASE_ANON_KEY is ${VITE_SUPABASE_ANON_KEY:+SET}" && \
+    npm run build
 
 # Production stage - serve with nginx
 FROM nginx:alpine
