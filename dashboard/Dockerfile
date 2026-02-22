@@ -5,9 +5,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies (including devDependencies needed for build)
 COPY dashboard/package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy source and build
 COPY dashboard/ .
