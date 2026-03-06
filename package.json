@@ -13,7 +13,8 @@
     "@anthropic-ai/sdk": "^0.78.0",
     "@supabase/supabase-js": "^2.97.0",
     "dotenv": "^17.3.1",
-    "node-cron": "^4.2.1"
+    "node-cron": "^4.2.1",
+    "ws": "^8.18.0"
   },
-  "_lastUpdated": "2026-03-06-fix-all-icon-conflicts"
+  "_lastUpdated": "2026-03-07-scanner-v2-websocket"
 }
