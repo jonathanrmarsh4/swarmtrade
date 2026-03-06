@@ -24,6 +24,7 @@ const sentiment = require('../agents/sentiment/index.js');
 // Loaded here so runDeliberation can call them directly. These modules import
 // from agents — not from this file — so there is no circular dependency.
 const { runRound2 }  = require('./debate.js');
+const events = require('./events.js');
 const { synthesise } = require('./synthesise.js');
 const risk           = require('../agents/risk/index.js');
 
@@ -293,36 +294,47 @@ async function runRound1(signalData, portfolioState) {
   // substituted inline at this stage, before orchestrator-level validation.
 
   console.log('[orchestrator] Dispatching all five agents in parallel...');
+  events.emitRound1Start(null, signalData.id).catch(() => {});
 
   const [bullRaw, bearRaw, quantRaw, macroRaw, sentimentRaw] = await Promise.all([
 
     withTimeout(bull.analyseRound1(bullMarketData), ROUND1_TIMEOUT_MS, 'bull')
+      .then(r => { events.emitAgentComplete(null, signalData.id, 'bull', r).catch(() => {}); return r; })
       .catch(err => {
         console.error(`[orchestrator] Bull Agent failed — substituting neutral default. Reason: ${err.message}`);
+        events.emitAgentFailed(null, signalData.id, 'bull', err.message).catch(() => {});
         return NEUTRAL_DEFAULTS.bull;
       }),
 
     withTimeout(bear.analyseRound1(bearMarketData), ROUND1_TIMEOUT_MS, 'bear')
+      .then(r => { events.emitAgentComplete(null, signalData.id, 'bear', r).catch(() => {}); return r; })
       .catch(err => {
         console.error(`[orchestrator] Bear Agent failed — substituting neutral default. Reason: ${err.message}`);
+        events.emitAgentFailed(null, signalData.id, 'bear', err.message).catch(() => {});
         return NEUTRAL_DEFAULTS.bear;
       }),
 
     withTimeout(quant.run(signalData, historicalTrades), ROUND1_TIMEOUT_MS, 'quant')
+      .then(r => { events.emitAgentComplete(null, signalData.id, 'quant', r).catch(() => {}); return r; })
       .catch(err => {
         console.error(`[orchestrator] Quant Agent failed — substituting neutral default. Reason: ${err.message}`);
+        events.emitAgentFailed(null, signalData.id, 'quant', err.message).catch(() => {});
         return NEUTRAL_DEFAULTS.quant;
       }),
 
     withTimeout(macro.run(macroInput), ROUND1_TIMEOUT_MS, 'macro')
+      .then(r => { events.emitAgentComplete(null, signalData.id, 'macro', r).catch(() => {}); return r; })
       .catch(err => {
         console.error(`[orchestrator] Macro Agent failed — substituting neutral default. Reason: ${err.message}`);
+        events.emitAgentFailed(null, signalData.id, 'macro', err.message).catch(() => {});
         return NEUTRAL_DEFAULTS.macro;
       }),
 
     withTimeout(sentiment.getSentimentSnapshot(), ROUND1_TIMEOUT_MS, 'sentiment')
+      .then(r => { events.emitAgentComplete(null, signalData.id, 'sentiment', r).catch(() => {}); return r; })
       .catch(err => {
         console.error(`[orchestrator] Sentiment Agent failed — substituting neutral default. Reason: ${err.message}`);
+        events.emitAgentFailed(null, signalData.id, 'sentiment', err.message).catch(() => {});
         return NEUTRAL_DEFAULTS.sentiment;
       }),
 
@@ -873,6 +885,7 @@ async function runDeliberation(signalId) {
   const { deliberationId } = round1Results;
 
   console.log(`[orchestrator] Step 4 ✓ — Round 1 complete, deliberationId=${deliberationId}`);
+  events.emitRound2Start(deliberationId, signal.id).catch(() => {});
 
   // Attach the signal descriptor and raw marketData to the round1Results object
   // before passing to downstream steps. debate.js destructures marketData;
@@ -902,6 +915,11 @@ async function runDeliberation(signalId) {
   }
 
   console.log(`[orchestrator] Step 5 ✓ — Round 2 complete`);
+  events.emitRound2Complete(deliberationId, signal.id, {
+    bullRebuttal: round2Results?.bullRebuttal ?? '',
+    bearRebuttal: round2Results?.bearRebuttal ?? '',
+  }).catch(() => {});
+  events.emitRound3Start(deliberationId, signal.id).catch(() => {});
 
 
   // ── Step 6: Round 3 — Orchestrator synthesis (Sonnet) ────────────────────────
@@ -920,6 +938,11 @@ async function runDeliberation(signalId) {
     `[orchestrator] Step 6 ✓ — synthesis complete: ` +
     `voteResult=${synthesisResult.voteResult} decision=${synthesisResult.decision}`,
   );
+  events.emitRound3Complete(deliberationId, signal.id, {
+    voteResult: synthesisResult.voteResult,
+    decision:   synthesisResult.decision,
+    reasoning:  synthesisResult.reasoning ?? '',
+  }).catch(() => {});
 
   let { decision } = synthesisResult;
 
@@ -963,10 +986,12 @@ async function runDeliberation(signalId) {
         `positionSizePct=${riskVerdict.positionSizePct}%. Reason: ${riskVerdict.reason}`,
       );
     }
+    events.emitRiskGate(deliberationId, signal.id, riskVerdict).catch(() => {});
   } else {
     console.log(
       `[orchestrator] Step 7 — Risk Agent not called (decision='${decision}', no trade proposed)`,
     );
+    events.emitRiskGate(deliberationId, signal.id, { approved: false, reason: `No trade — decision was '${decision}'`, positionSizePct: 0 }).catch(() => {});
   }
 
 
@@ -1017,6 +1042,12 @@ async function runDeliberation(signalId) {
     `  positionSizePct=${riskVerdict.positionSizePct}\n` +
     `  elapsedMs=${elapsed}`,
   );
+
+  events.emitDone(deliberationId, signal.id, {
+    decision,
+    riskApproved: riskVerdict.approved,
+    elapsedMs:    elapsed,
+  }).catch(() => {});
 
   return {
     deliberationId,

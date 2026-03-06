@@ -6,6 +6,7 @@ import SignalHistory from './components/SignalHistory';
 import AgentReputation from './components/AgentReputation';
 import TestSignal from './components/TestSignal';
 import Scanner from './components/Scanner';
+import WarRoom from './components/WarRoom';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'signals',       label: 'Signals',       icon: '📡' },
   { id: 'agents',        label: 'Agents',        icon: '🤖' },
   { id: 'scanner',       label: 'Scanner',       icon: '🔍' },
+  { id: 'warroom',       label: 'War Room',      icon: '⚡' },
 ];
 
 // ─── Connection probe ─────────────────────────────────────────────────────────
@@ -174,6 +176,7 @@ export default function App() {
         {activeTab === 'signals'       && <SignalHistory />}
         {activeTab === 'agents'        && <AgentReputation />}
         {activeTab === 'scanner'       && <Scanner />}
+        {activeTab === 'warroom'       && <WarRoom />}
       </main>
     </div>
   );
