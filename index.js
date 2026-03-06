@@ -14,9 +14,11 @@ const REQUIRED_ENV = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_KEY',
   'TRADINGVIEW_WEBHOOK_SECRET',
-  'OCTOBOT_WEBHOOK_URL',
   'RAILWAY_ENVIRONMENT',
 ];
+
+// Optional but recommended — warn rather than crash if missing.
+const OPTIONAL_BROKER_ENV = ['ALPACA_API_KEY', 'ALPACA_API_SECRET', 'OCTOBOT_WEBHOOK_URL'];
 
 const missing = REQUIRED_ENV.filter(key => !process.env[key]);
 
@@ -27,6 +29,17 @@ if (missing.length > 0) {
 }
 
 console.log('[startup] Environment variables validated \u2713');
+
+// Detect and log broker execution mode
+const hasAlpaca  = !!(process.env.ALPACA_API_KEY && process.env.ALPACA_API_SECRET);
+const hasOctoBot = !!process.env.OCTOBOT_WEBHOOK_URL;
+if (hasAlpaca) {
+  console.log('[startup] Broker mode: ALPACA PAPER TRADING \u2713');
+} else if (hasOctoBot) {
+  console.log('[startup] Broker mode: OCTOBOT WEBHOOK');
+} else {
+  console.warn('[startup] WARNING: No broker configured. Running in SIMULATION mode — trades logged but not executed. Add ALPACA_API_KEY + ALPACA_API_SECRET in Railway to enable real paper trading.');
+}
 
 
 // ── Step 2: RAILWAY_ENVIRONMENT guard ─────────────────────────────────────────

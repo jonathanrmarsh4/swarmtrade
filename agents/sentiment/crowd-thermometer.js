@@ -27,8 +27,9 @@ const { buildCrowdThermometerPrompt } = require('./prompt.js');
 const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 const FEAR_GREED_URL      = 'https://api.alternative.me/fng/?limit=1';
-const CRYPTO_REDDIT_URL   = 'https://www.reddit.com/r/CryptoCurrency/hot.json?limit=20&t=day';
-const BITCOIN_REDDIT_URL  = 'https://www.reddit.com/r/Bitcoin/hot.json?limit=10&t=day';
+// Use old.reddit.com which returns JSON more reliably than www.reddit.com for server requests
+const CRYPTO_REDDIT_URL   = 'https://old.reddit.com/r/CryptoCurrency/hot.json?limit=20&t=day';
+const BITCOIN_REDDIT_URL  = 'https://old.reddit.com/r/Bitcoin/hot.json?limit=10&t=day';
 
 // Keyword fallback for deterministic Reddit score (used only if LLM fails)
 const BULLISH_TERMS = [
@@ -61,6 +62,9 @@ function getSupabase() {
 }
 
 // ── HTTP helper ───────────────────────────────────────────────────────────────
+// Uses a realistic browser User-Agent to avoid bot-blocking from Reddit.
+// Checks HTTP status before parsing so we get a clean error instead of
+// "Unexpected token < ... is not valid JSON" when Reddit returns an HTML page.
 
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
@@ -68,12 +72,19 @@ function fetchJson(url) {
       url,
       {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; SwarmTrade/1.0; +https://github.com/swarmtrade)',
-          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
           'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
         },
       },
       (res) => {
+        // Reject early on non-2xx so we get a meaningful error, not a JSON parse failure.
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          res.resume(); // drain the response body
+          reject(new Error(`HTTP ${res.statusCode} from ${url}`));
+          return;
+        }
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {

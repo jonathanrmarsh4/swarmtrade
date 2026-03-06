@@ -24,7 +24,10 @@ const { buildNewsAssessmentPrompt } = require('./prompt.js');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CRYPTOPANIC_URL = 'https://cryptopanic.com/api/free/v1/posts/';
+// CryptoPanic free API v1 endpoint (auth_token required — set CRYPTOPANIC_API_KEY in Railway)
+// Fallback: if CryptoPanic is unavailable, news-sentinel polls CoinGecko trending coins
+// as a lightweight proxy for market attention.
+const CRYPTOPANIC_URL = 'https://cryptopanic.com/api/v1/posts/';
 
 // Only posts CryptoPanic flags as "important" are sent to the LLM.
 // This prevents burning Haiku tokens on routine market chatter.
@@ -67,9 +70,13 @@ async function fetchCryptoPanicNews() {
   url.searchParams.set('auth_token', process.env.CRYPTOPANIC_API_KEY);
   url.searchParams.set('filter', CRYPTOPANIC_FILTER);
   url.searchParams.set('public', 'true');
+  url.searchParams.set('kind', 'news');
 
   const response = await fetch(url.toString(), {
-    headers: { 'User-Agent': 'SwarmTrade/1.0 (news-sentinel)' },
+    headers: {
+      'User-Agent': 'SwarmTrade/1.0 (news-sentinel)',
+      'Accept': 'application/json',
+    },
     signal: AbortSignal.timeout(10_000),
   });
 
@@ -81,6 +88,37 @@ async function fetchCryptoPanicNews() {
 
   const data = await response.json();
   return data.results ?? [];
+}
+
+// ── CoinGecko trending fallback ───────────────────────────────────────────────
+// Called when CryptoPanic is unavailable. Fetches trending coins as a lightweight
+// proxy for market attention — coins trending on CoinGecko often precede news cycles.
+
+async function fetchCoinGeckoTrending() {
+  const response = await fetch('https://api.coingecko.com/api/v3/search/trending', {
+    headers: {
+      'User-Agent': 'SwarmTrade/1.0 (news-sentinel)',
+      'Accept': 'application/json',
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`[news-sentinel] CoinGecko trending returned ${response.status}`);
+  }
+
+  const data = await response.json();
+  const coins = data.coins ?? [];
+
+  // Normalise to the same shape as CryptoPanic results so pollCycle() needs no changes.
+  return coins.slice(0, 10).map((entry, i) => ({
+    id:    `coingecko-trending-${entry.item?.id ?? i}`,
+    title: `Trending on CoinGecko: ${entry.item?.name ?? 'Unknown'} (${entry.item?.symbol ?? '?'}) — rank #${entry.item?.market_cap_rank ?? 'N/A'}`,
+    url:   `https://www.coingecko.com/en/coins/${entry.item?.id ?? ''}`,
+    source: { title: 'CoinGecko Trending' },
+    domain: 'coingecko.com',
+    currencies: entry.item?.symbol ? [{ code: entry.item.symbol.toUpperCase() }] : [],
+  }));
 }
 
 // ── LLM assessment ────────────────────────────────────────────────────────────
@@ -153,9 +191,16 @@ async function pollCycle() {
   let posts;
   try {
     posts = await fetchCryptoPanicNews();
+    console.log(`[news-sentinel] CryptoPanic returned ${posts.length} posts`);
   } catch (err) {
-    console.error('[news-sentinel] CryptoPanic fetch failed — skipping cycle:', err.message);
-    return;
+    console.warn(`[news-sentinel] CryptoPanic unavailable — trying CoinGecko fallback: ${err.message}`);
+    try {
+      posts = await fetchCoinGeckoTrending();
+      console.log(`[news-sentinel] CoinGecko fallback returned ${posts.length} trending items`);
+    } catch (fallbackErr) {
+      console.error(`[news-sentinel] All news sources failed — skipping cycle: ${fallbackErr.message}`);
+      return;
+    }
   }
 
   if (posts.length === 0) {
