@@ -203,6 +203,19 @@ function isBreakout(candles) {
 
 // ── Screener ──────────────────────────────────────────────────────────────────
 
+function calcATR(candles, period = 14) {
+  if (candles.length < 2) return null;
+  const trs = [];
+  for (let i = 1; i < candles.length; i++) {
+    const high  = candles[i].high;
+    const low   = candles[i].low;
+    const prevClose = candles[i - 1].close;
+    trs.push(Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose)));
+  }
+  const recent = trs.slice(-period);
+  return recent.reduce((a, b) => a + b, 0) / recent.length;
+}
+
 function screenAsset(symbol, price, candles) {
   const signals  = [];
   let   score    = 0;
@@ -253,6 +266,8 @@ function screenAsset(symbol, price, candles) {
   else if (bullSignals.length > 0) direction = 'long'; // tie goes to long
   else direction = 'long'; // default
 
+  const atr = calcATR(candles);
+
   return {
     symbol,
     price,
@@ -263,6 +278,7 @@ function screenAsset(symbol, price, candles) {
     macdCross:   macd.crossover ? 'bullish' : macd.crossunder ? 'bearish' : null,
     breakout:    breakoutHigh ? 'high' : breakoutLow ? 'low' : null,
     signals:     [...bullSignals, ...bearSignals, ...signals],
+    atr:         atr ? parseFloat(atr.toFixed(8)) : null,
   };
 }
 
@@ -303,7 +319,14 @@ async function writeScanMeta(scanId, { total, escalated, durationMs }) {
   if (error) console.warn(`[scanner] Failed to write scan meta: ${error.message}`);
 }
 
-async function writeSignalToSupabase(asset, direction, score, signals, price) {
+async function writeSignalToSupabase(asset, direction, score, signals, price, technical = {}) {
+  const { rsi, volumeRatio, macdCross, breakout, atr } = technical;
+
+  // Derive MACD signal string that extractMarketData understands
+  const macdSignal = macdCross === 'bullish' ? 'bullish_crossover'
+                   : macdCross === 'bearish' ? 'bearish_crossover'
+                   : 'neutral';
+
   const { data, error } = await getSupabase()
     .from('signals')
     .insert({
@@ -311,7 +334,21 @@ async function writeSignalToSupabase(asset, direction, score, signals, price) {
       direction,
       timeframe:   '1h',
       signal_type: 'scanner',
-      raw_payload: { asset, direction, price, score, signals, signal_type: 'scanner' },
+      raw_payload: {
+        asset,
+        direction,
+        price,
+        score,
+        signals,
+        signal_type:  'scanner',
+        // Technical indicators — read by extractMarketData in orchestrator
+        rsi:          rsi          ?? 50,
+        volume_ratio: volumeRatio  ?? 1.0,
+        macd_signal:  macdSignal,
+        breakout,
+        // ATR for position sizing in Risk Gate
+        atr:          atr ?? null,
+      },
     })
     .select('id')
     .single();
@@ -323,11 +360,11 @@ async function writeSignalToSupabase(asset, direction, score, signals, price) {
 // ── Swarm escalation ──────────────────────────────────────────────────────────
 
 async function escalateToSwarm(candidate) {
-  const { symbol, direction, score, signals, price } = candidate;
+  const { symbol, direction, score, signals, price, rsi, volumeRatio, macdCross, breakout, atr } = candidate;
   console.log(`[scanner] Escalating ${symbol} to swarm — score=${score} direction=${direction} signals=[${signals.join(', ')}]`);
 
   try {
-    const signalId = await writeSignalToSupabase(symbol, direction, score, signals, price);
+    const signalId = await writeSignalToSupabase(symbol, direction, score, signals, price, { rsi, volumeRatio, macdCross, breakout, atr });
     const result   = await runDeliberation(signalId);
 
     console.log(

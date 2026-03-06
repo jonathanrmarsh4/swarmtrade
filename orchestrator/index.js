@@ -528,6 +528,7 @@ function extractMarketData(signal) {
 
   // ATR default: 2% of current price — rough but prevents Risk Agent from
   // throwing on signals that don't include volatility data.
+  // Use payload ATR if available (scanner provides it). Fall back to 2% of price.
   const atr = p.atr ?? (currentPrice > 0 ? parseFloat((currentPrice * 0.02).toFixed(8)) : 1);
 
   // Normalise MACD signal field — different Pine Script authors use different keys
@@ -538,7 +539,7 @@ function extractMarketData(signal) {
     rsi:                   p.rsi                   ?? 50,
     macdSignal,
     macd:                  macdSignal,   // alias so Bear Round 2 prompt can read it directly
-    volume:                p.volume_ratio           ?? 1.0,
+    volume:                p.volume_ratio ?? p.volume ?? 1.0,
     fundingRate:           p.funding_rate           ?? 0,
     fearGreedIndex:        p.fear_greed             ?? 50,
     recentRejectionLevels: p.rejection_levels       ?? [],
