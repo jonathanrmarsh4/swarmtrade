@@ -373,24 +373,37 @@ function LiveIndicator({ active }) {
 // ── Root component ────────────────────────────────────────────────────────────
 
 export default function WarRoom() {
-  const [events,    setEvents]    = useState([]);
-  const [newIds,    setNewIds]    = useState(new Set());
-  const [isActive,  setIsActive]  = useState(false);
+  const [events,         setEvents]         = useState([]);
+  const [newIds,         setNewIds]         = useState(new Set());
+  const [isActive,       setIsActive]       = useState(false);
+  const [currentSignalId, setCurrentSignalId] = useState(null);
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    // Load last 50 events on mount
-    async function loadRecent() {
+    // Load only the most recent signal's events on mount
+    async function loadLatest() {
+      // Find the most recent signal_id
+      const { data: latest } = await supabase
+        .from('deliberation_events')
+        .select('signal_id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!latest?.signal_id) return;
+
       const { data } = await supabase
         .from('deliberation_events')
         .select('*')
-        .order('sequence', { ascending: true })
-        .limit(50);
+        .eq('signal_id', latest.signal_id)
+        .order('sequence', { ascending: true });
+
       if (data?.length) {
         setEvents(data);
+        setCurrentSignalId(latest.signal_id);
       }
     }
-    loadRecent();
+    loadLatest();
 
     // Subscribe to new events in real time
     const channel = supabase
@@ -401,11 +414,20 @@ export default function WarRoom() {
         table:  'deliberation_events',
       }, (payload) => {
         const newEvent = payload.new;
-        setEvents(prev => {
-          // Avoid duplicates
-          if (prev.find(e => e.id === newEvent.id)) return prev;
-          return [...prev, newEvent].sort((a, b) => a.sequence - b.sequence);
+
+        setCurrentSignalId(prev => {
+          // New signal starting — clear everything and start fresh
+          if (prev && newEvent.signal_id && newEvent.signal_id !== prev) {
+            setEvents([newEvent]);
+          } else {
+            setEvents(prevEvents => {
+              if (prevEvents.find(e => e.id === newEvent.id)) return prevEvents;
+              return [...prevEvents, newEvent].sort((a, b) => a.sequence - b.sequence);
+            });
+          }
+          return newEvent.signal_id ?? prev;
         });
+
         setNewIds(prev => new Set([...prev, newEvent.id]));
         setIsActive(true);
 
@@ -431,17 +453,8 @@ export default function WarRoom() {
     }
   }, [events.length]);
 
-  // Group events by signal for visual separation
-  const grouped = [];
-  let currentGroup = null;
-  for (const event of events) {
-    const key = event.signal_id ?? event.deliberation_id ?? 'unknown';
-    if (!currentGroup || currentGroup.key !== key) {
-      currentGroup = { key, events: [] };
-      grouped.push(currentGroup);
-    }
-    currentGroup.events.push(event);
-  }
+  // Single signal — no grouping needed
+  const grouped = events.length > 0 ? [{ key: currentSignalId ?? 'current', events }] : [];
 
   return (
     <div style={{
@@ -493,19 +506,7 @@ export default function WarRoom() {
         ) : (
           grouped.map((group, gi) => (
             <div key={group.key} style={{ marginTop: gi > 0 ? 24 : 16 }}>
-              {/* Group separator */}
-              {gi > 0 && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  marginBottom: 16,
-                }}>
-                  <div style={{ flex: 1, height: 1, background: C.border }} />
-                  <span style={{ fontSize: 10, color: C.textFaint, letterSpacing: '0.1em' }}>
-                    NEW SIGNAL
-                  </span>
-                  <div style={{ flex: 1, height: 1, background: C.border }} />
-                </div>
-              )}
+
               {group.events.map(event => (
                 <EventCard
                   key={event.id}
