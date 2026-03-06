@@ -14,7 +14,7 @@ const REQUIRED_ENV = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_KEY',
   'TRADINGVIEW_WEBHOOK_SECRET',
-  'RAILWAY_ENVIRONMENT',
+  'SWARMTRADE_MODE',
 ];
 
 // Optional but recommended — warn rather than crash if missing.
@@ -46,9 +46,9 @@ if (hasAlpaca) {
 // Warn if not 'paper' but do not exit — the same boot path serves future live mode.
 // Paper-trading is also enforced at the OctoBot config level (belt and suspenders).
 
-if (process.env.RAILWAY_ENVIRONMENT !== 'paper') {
+if (process.env.SWARMTRADE_MODE !== 'paper') {
   console.warn(
-    `[startup] WARNING: RAILWAY_ENVIRONMENT is '${process.env.RAILWAY_ENVIRONMENT}'. ` +
+    `[startup] WARNING: RAILWAY_ENVIRONMENT is '${process.env.SWARMTRADE_MODE}'. ` +
     `Expected 'paper'. Confirm OctoBot is in paper trading mode before proceeding.`,
   );
 } else {
@@ -103,7 +103,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status:      'ok',
-      environment: process.env.RAILWAY_ENVIRONMENT,
+      environment: process.env.SWARMTRADE_MODE,
       uptime:      process.uptime(),
       timestamp:   new Date(),
     }));
@@ -123,7 +123,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   // ── Step 7: Startup summary ───────────────────────────────────────────────
-  const env  = process.env.RAILWAY_ENVIRONMENT ?? 'unknown';
+  const env  = process.env.SWARMTRADE_MODE ?? 'unknown';
   const mode = env === 'paper' ? 'PAPER TRADING (safe)' : env.toUpperCase();
 
   console.log('');

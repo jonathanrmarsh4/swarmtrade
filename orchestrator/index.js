@@ -490,7 +490,7 @@ async function fetchPortfolioState() {
     openPositions:      openTrades.length,
     currentDrawdownPct,
     portfolioValue:     currentPortfolioValue,
-    mode:               process.env.RAILWAY_ENVIRONMENT === 'live' ? 'live' : 'paper',
+    mode:               process.env.SWARMTRADE_MODE === 'live' ? 'live' : 'paper',
     historicalTrades:   trades,
     openTrades,
     closedTrades,
@@ -670,7 +670,7 @@ async function createTradeRecord(deliberationId, signal, marketData, riskVerdict
     deliberation_id:   deliberationId,
     entry_price:       marketData.currentPrice > 0 ? marketData.currentPrice : null,
     position_size_usd: positionSizeUsd,
-    mode:              process.env.RAILWAY_ENVIRONMENT === 'live' ? 'live' : 'paper',
+    mode:              process.env.SWARMTRADE_MODE === 'live' ? 'live' : 'paper',
     status:            'pending_execution',
   };
 

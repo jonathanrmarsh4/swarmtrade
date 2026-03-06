@@ -81,8 +81,8 @@ function assertSafe(tradeInstruction) {
     errors.push('BINANCE_TESTNET env var must be set to "true"');
   }
 
-  if (process.env.RAILWAY_ENVIRONMENT !== 'paper') {
-    errors.push(`RAILWAY_ENVIRONMENT must be "paper" (currently "${process.env.RAILWAY_ENVIRONMENT}")`);
+  if (process.env.SWARMTRADE_MODE !== 'paper') {
+    errors.push(`RAILWAY_ENVIRONMENT must be "paper" (currently "${process.env.SWARMTRADE_MODE}")`);
   }
 
   const symbol = normaliseSymbol(tradeInstruction.asset);

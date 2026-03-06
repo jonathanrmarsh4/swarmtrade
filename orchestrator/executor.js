@@ -125,10 +125,10 @@ async function executeTrade(tradeInstruction, deliberationId) {
   // ── Hard safety gate ────────────────────────────────────────────────────────
   // This check is unconditional and must never be moved, wrapped, or guarded.
   // It is the last application-layer line of defence before capital is at risk.
-  if (process.env.RAILWAY_ENVIRONMENT !== 'paper') {
+  if (process.env.SWARMTRADE_MODE !== 'paper') {
     throw new Error(
       `[executor] SAFETY GATE VIOLATED: RAILWAY_ENVIRONMENT is ` +
-      `'${process.env.RAILWAY_ENVIRONMENT ?? 'undefined'}'. ` +
+      `'${process.env.SWARMTRADE_MODE ?? 'undefined'}'. ` +
       `executeTrade() may only be called when RAILWAY_ENVIRONMENT=paper. ` +
       `Refusing to execute. No trade has been placed.`,
     );
