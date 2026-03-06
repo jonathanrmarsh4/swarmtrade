@@ -4,6 +4,11 @@
 // agent committee deliberating in real time.
 
 import { useState, useEffect, useRef } from 'react';
+import {
+  Zap, FlaskConical, CheckCircle, XCircle, Swords, MessageSquare,
+  Brain, Scale, Shield, Flag, TrendingUp, TrendingDown, BarChart2,
+  Globe, Activity, Loader, Clock, Radio
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -29,16 +34,16 @@ const C = {
 
 // ── Event type config ─────────────────────────────────────────────────────────
 const EVENT_CONFIG = {
-  signal_received:   { label: 'Signal Received',     icon: '⚡', color: C.blue,   dim: false },
-  round1_start:      { label: 'Round 1 — Analysis',  icon: '🔬', color: C.amber,  dim: false },
-  agent_complete:    { label: 'Agent Complete',       icon: '✓',  color: C.green,  dim: false },
-  agent_failed:      { label: 'Agent Failed',         icon: '✗',  color: C.red,    dim: false },
-  round2_start:      { label: 'Round 2 — Debate',     icon: '⚔️',  color: C.amber,  dim: false },
-  round2_complete:   { label: 'Debate Complete',      icon: '💬', color: C.teal,   dim: false },
-  round3_start:      { label: 'Round 3 — Synthesis',  icon: '🧠', color: C.purple, dim: false },
-  round3_complete:   { label: 'Decision Made',        icon: '⚖️',  color: C.blue,   dim: false },
-  risk_gate:         { label: 'Risk Gate',            icon: '🛡',  color: C.purple, dim: false },
-  deliberation_done: { label: 'Complete',             icon: '🏁', color: C.green,  dim: false },
+  signal_received:   { label: 'Signal Received',     Icon: Zap,           color: C.blue   },
+  round1_start:      { label: 'Round 1 — Analysis',  Icon: FlaskConical,  color: C.amber  },
+  agent_complete:    { label: 'Agent Complete',       Icon: CheckCircle,   color: C.green  },
+  agent_failed:      { label: 'Agent Failed',         Icon: XCircle,       color: C.red    },
+  round2_start:      { label: 'Round 2 — Debate',     Icon: Swords,        color: C.amber  },
+  round2_complete:   { label: 'Debate Complete',      Icon: MessageSquare, color: C.teal   },
+  round3_start:      { label: 'Round 3 — Synthesis',  Icon: Brain,         color: C.purple },
+  round3_complete:   { label: 'Decision Made',        Icon: Scale,         color: C.blue   },
+  risk_gate:         { label: 'Risk Gate',            Icon: Shield,        color: C.purple },
+  deliberation_done: { label: 'Complete',             Icon: Flag,          color: C.green  },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -100,7 +105,7 @@ function AgentCompleteCard({ payload }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 18 }}>{payload.emoji}</span>
+        {(() => { const M = AGENT_META[payload.agent]; const AgentIcon = M?.Icon ?? Activity; return <AgentIcon size={16} color={M?.color ?? C.gray} />; })()}
         <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{payload.label}</span>
         {payload.score != null && (
           <span style={{
@@ -140,7 +145,7 @@ function AgentCompleteCard({ payload }) {
 function AgentFailedCard({ payload }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 16 }}>{payload.emoji}</span>
+      {(() => { const M = AGENT_META[payload.agent]; const AgentIcon = M?.Icon ?? Activity; return <AgentIcon size={15} color={C.red} />; })()}
       <span style={{ fontSize: 13, color: C.red }}>{payload.label} — using neutral default</span>
     </div>
   );
@@ -217,7 +222,7 @@ function RiskGateCard({ payload }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 16 }}>🛡</span>
+        <Shield size={16} color={color} />
         <span style={{
           fontSize: 14, fontWeight: 900, color,
           background: `${color}18`, border: `1px solid ${color}60`,
@@ -244,14 +249,16 @@ function RiskGateCard({ payload }) {
 function DoneCard({ payload }) {
   const approved = payload.risk_approved;
   const color = approved ? C.green : payload.decision === 'hold' ? C.amber : C.red;
-  const outcome = approved ? '🟢 TRADE APPROVED' : payload.decision === 'hold' ? '⏸ HOLD' : '🔴 VETOED';
+  const DoneIcon = approved ? CheckCircle : payload.decision === 'hold' ? Clock : XCircle;
+  const outcomeLabel = approved ? 'TRADE APPROVED' : payload.decision === 'hold' ? 'HOLD' : 'VETOED';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <DoneIcon size={16} color={color} />
       <span style={{
         fontSize: 15, fontWeight: 900, color,
         textShadow: `0 0 20px ${color}60`,
       }}>
-        {outcome}
+        {outcomeLabel}
       </span>
       <span style={{ fontSize: 11, color: C.textMuted }}>
         {payload.elapsed_ms ? `${(payload.elapsed_ms / 1000).toFixed(1)}s` : ''}
@@ -263,7 +270,7 @@ function DoneCard({ payload }) {
 // ── Event Card ────────────────────────────────────────────────────────────────
 
 function EventCard({ event, isNew }) {
-  const config = EVENT_CONFIG[event.event_type] ?? { label: event.event_type, icon: '•', color: C.gray };
+  const config = EVENT_CONFIG[event.event_type] ?? { label: event.event_type, Icon: Radio, color: C.gray };
   const payload = event.payload ?? {};
 
   return (
@@ -285,7 +292,7 @@ function EventCard({ event, isNew }) {
           fontSize: 13,
           boxShadow: isNew ? `0 0 12px ${config.color}40` : 'none',
         }}>
-          {config.icon}
+          {config.Icon && <config.Icon size={13} color={config.color} />}
         </div>
       </div>
 
@@ -477,8 +484,9 @@ export default function WarRoom() {
         background: C.surface,
       }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.text, letterSpacing: '-0.02em' }}>
-            ⚡ War Room
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.text, letterSpacing: '-0.02em', display:'flex', alignItems:'center', gap: 8 }}>
+            <Zap size={18} color={C.blue} />
+            War Room
           </h2>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: C.textMuted }}>
             Live agent deliberation stream · Updates in real-time as signals are processed

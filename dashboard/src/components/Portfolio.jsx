@@ -1,3 +1,4 @@
+import { TrendingUp } from 'lucide-react';
 // Portfolio — displays live paper P&L vs buy-and-hold benchmark.
 // Subscribes to Supabase trades table in real time.
 // Shows current open positions, total return, drawdown, and Sharpe ratio.
@@ -71,7 +72,7 @@ function ChartPlaceholder() {
       gap: 8,
       color: C.textMuted,
     }}>
-      <span style={{ fontSize: 28 }}>📈</span>
+      <TrendingUp size={28} color='#4ade80' />
       <span style={{ fontSize: 13, fontWeight: 600 }}>P&amp;L vs Benchmark Chart</span>
       <span style={{ fontSize: 11 }}>Renders once trades are logged</span>
     </div>

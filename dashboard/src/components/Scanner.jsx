@@ -1,3 +1,4 @@
+import { Radio, FlaskConical, Brain, Database, Search, Clock } from 'lucide-react';
 // Scanner — displays market scan results and escalation status.
 // Reads from scanner_runs and scanner_results tables in Supabase.
 // Updates in real-time as new scans complete.
@@ -69,7 +70,7 @@ function EscalatedBadge() {
       borderRadius: 20,
       padding: '2px 7px',
     }}>
-      🧠 SWARM
+      SWARM
     </span>
   );
 }
@@ -161,7 +162,7 @@ function NextScanCountdown() {
       fontSize: 12, color: C.textMuted,
       display: 'flex', alignItems: 'center', gap: 6,
     }}>
-      ⏱ Next scan in <span style={{ color: C.blue, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt}</span>
+      Next scan in <span style={{ color: C.blue, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt}</span>
     </div>
   );
 }
@@ -370,16 +371,16 @@ export default function Scanner() {
         display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20,
       }}>
         {[
-          { icon: '📡', label: 'Stage 1', desc: 'Fetch top 100 pairs by volume' },
-          { icon: '🔬', label: 'Stage 2', desc: 'Screen: RSI + Volume + Breakout + MACD' },
-          { icon: '🧠', label: 'Stage 3', desc: 'Top scorers sent to agent swarm' },
-          { icon: '📊', label: 'Stage 4', desc: 'Results saved + dashboard updated' },
+          { Icon: Radio,        label: 'Stage 1', desc: 'Fetch top 100 pairs by volume' },
+          { Icon: FlaskConical, label: 'Stage 2', desc: 'Screen: RSI + Volume + Breakout + MACD' },
+          { Icon: Brain,        label: 'Stage 3', desc: 'Top scorers sent to agent swarm' },
+          { Icon: Database,     label: 'Stage 4', desc: 'Results saved + dashboard updated' },
         ].map((s, i) => (
           <div key={i} style={{
             background: C.surface, border: `1px solid ${C.border}`,
             borderRadius: 8, padding: '12px 14px',
           }}>
-            <div style={{ fontSize: 18, marginBottom: 4 }}>{s.icon}</div>
+            <div style={{ marginBottom: 4 }}><s.Icon size={16} color='#60a5fa' /></div>
             <div style={{ fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{s.label}</div>
             <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3, lineHeight: 1.5 }}>{s.desc}</div>
           </div>
@@ -400,7 +401,7 @@ export default function Scanner() {
           borderRadius: 10, marginBottom: 16,
           color: C.textMuted, fontSize: 13,
         }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>
+          <div style={{ marginBottom: 12 }}><Search size={32} color='#4a7090' /></div>
           No scans yet — first scan runs on startup, then every hour at :00
         </div>
       )}

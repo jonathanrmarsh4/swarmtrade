@@ -1,3 +1,4 @@
+import { TrendingUp, TrendingDown, BarChart2, Globe, Activity, Shield } from 'lucide-react';
 // AgentReputation — displays weekly accuracy scores per agent.
 // Reads from Supabase agent_reputation table via useRealtimeTable.
 // Updated nightly by the Reflection Agent in /scripts/reflection-agent.js.
@@ -23,12 +24,12 @@ import { useRealtimeTable } from '../lib/supabase';
 const MIN_TRADES = 10;
 
 const AGENTS = [
-  { key: 'bull',      label: 'Bull',      emoji: '🟢' },
-  { key: 'bear',      label: 'Bear',      emoji: '🔴' },
-  { key: 'quant',     label: 'Quant',     emoji: '📊' },
-  { key: 'macro',     label: 'Macro',     emoji: '🌍' },
-  { key: 'sentiment', label: 'Sentiment', emoji: '💬' },
-  { key: 'risk',      label: 'Risk Gate', emoji: '🛡' },
+  { key: 'bull',      label: 'Bull',      Icon: TrendingUp   },
+  { key: 'bear',      label: 'Bear',      Icon: TrendingDown },
+  { key: 'quant',     label: 'Quant',     Icon: BarChart2    },
+  { key: 'macro',     label: 'Macro',     Icon: Globe        },
+  { key: 'sentiment', label: 'Sentiment', Icon: Activity     },
+  { key: 'risk',      label: 'Risk Gate', Icon: Shield       },
 ];
 
 // Dark trading dashboard palette
@@ -268,7 +269,7 @@ function AgentCard({ agent, rows }) {
         justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <span style={{ fontSize: 22, lineHeight: 1 }}>{agent.emoji}</span>
+          <agent.Icon size={18} />
           <span style={{ fontSize: 16, fontWeight: 800, color: C.text }}>
             {agent.label}
           </span>
@@ -366,7 +367,7 @@ function WeightComparisonChart({ agentData }) {
     const rows   = agentData[agent.key] ?? [];
     const latest = rows.length > 0 ? rows[rows.length - 1] : null;
     return {
-      name:   `${agent.emoji}  ${agent.label}`,
+      name:   agent.label,
       weight: latest?.current_weight ?? 1.0,
     };
   });

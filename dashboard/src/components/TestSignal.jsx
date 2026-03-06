@@ -1,3 +1,4 @@
+import { TrendingUp, TrendingDown, Loader, CheckCircle, XCircle } from 'lucide-react';
 // TestSignal — manual signal firing panel for testing without TradingView.
 // Sends the same JSON payload that a real TradingView alert would send.
 
@@ -58,7 +59,11 @@ function FireButton({ direction, onClick, loading }) {
         transition: 'all 0.15s ease',
       }}
     >
-      {loading ? '⏳ Sending…' : isLong ? '🟢 Fire Long' : '🔴 Fire Short'}
+      {loading
+        ? <><Loader size={13} style={{animation:'spin 1s linear infinite'}} /> Sending…</>
+        : isLong
+          ? <><TrendingUp size={13} /> Fire Long</>
+          : <><TrendingDown size={13} /> Fire Short</>}
     </button>
   );
 }
@@ -183,7 +188,7 @@ export default function TestSignal() {
           color: lastResult.ok ? C.text : C.red,
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span>{lastResult.ok ? '✓' : '✗'}</span>
+          {lastResult.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
           <span>{lastResult.message}</span>
           {lastResult.ok && (
             <span style={{ marginLeft: 'auto', color: C.textMuted, fontSize: 11 }}>

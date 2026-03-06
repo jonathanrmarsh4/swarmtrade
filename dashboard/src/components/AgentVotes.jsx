@@ -1,3 +1,4 @@
+import { TrendingUp, TrendingDown, Globe, BarChart2, Activity, Shield, CheckCircle, XCircle, Clock } from 'lucide-react';
 // AgentVotes — displays the vote breakdown per deliberation.
 // Shows all 6 agents: Bull, Bear, Quant, Macro, Sentiment, Risk
 // Used as an embedded sub-component inside DeliberationLog.
@@ -65,14 +66,14 @@ function VoteBar({ label, score, color, rebuttal, pill }) {
 // Risk gate status badge
 function RiskBadge({ approved, reason }) {
   const color  = approved ? C.green : C.red;
-  const label  = approved ? '✓ APPROVED' : '✗ VETOED';
+  const label  = approved ? 'APPROVED' : 'VETOED';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         fontSize: 11, color: C.textMuted,
       }}>
-        <span style={{ fontWeight: 600 }}>🛡 Risk Gate</span>
+        <span style={{ fontWeight: 600, display:'flex', alignItems:'center', gap:5 }}><Shield size={13} /> Risk Gate</span>
         <span style={{
           fontSize: 10, fontWeight: 700,
           color,
@@ -138,7 +139,7 @@ export default function AgentVotes({ deliberation: d }) {
 
       {/* Row 1: Bull */}
       <VoteBar
-        label="🟢 Bull"
+        label="Bull"
         score={d.bull_score}
         color={C.green}
         rebuttal={d.bull_rebuttal}
@@ -146,7 +147,7 @@ export default function AgentVotes({ deliberation: d }) {
 
       {/* Row 2: Bear */}
       <VoteBar
-        label="🔴 Bear"
+        label="Bear"
         score={d.bear_score}
         color={C.red}
         rebuttal={d.bear_rebuttal}
@@ -154,7 +155,7 @@ export default function AgentVotes({ deliberation: d }) {
 
       {/* Row 3: Macro — now a full score bar with regime pill */}
       <VoteBar
-        label="🌍 Macro"
+        label="Macro"
         score={d.macro_score ?? (macroRegime === 'risk-on' ? 70 : macroRegime === 'risk-off' ? 30 : 50)}
         color={C.teal}
         pill={macroPill}
@@ -162,14 +163,14 @@ export default function AgentVotes({ deliberation: d }) {
 
       {/* Row 4: Quant EV */}
       <VoteBar
-        label="📊 Quant EV"
+        label="Quant EV"
         score={quantScore}
         color={C.blue}
       />
 
       {/* Row 5: Sentiment */}
       <VoteBar
-        label="💬 Sentiment"
+        label="Sentiment"
         score={d.sentiment_score}
         color={C.amber}
       />
@@ -185,7 +186,7 @@ export default function AgentVotes({ deliberation: d }) {
         />
       ) : (
         <div style={{ fontSize: 11, color: C.textMuted, fontStyle: 'italic' }}>
-          🛡 Risk Gate — pending
+          Risk Gate — pending
         </div>
       )}
     </div>

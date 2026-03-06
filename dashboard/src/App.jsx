@@ -7,16 +7,17 @@ import AgentReputation from './components/AgentReputation';
 import TestSignal from './components/TestSignal';
 import Scanner from './components/Scanner';
 import WarRoom from './components/WarRoom';
+import { BarChart2, Brain, Radio, Bot, ScanSearch, Zap } from 'lucide-react';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'portfolio',     label: 'Portfolio',     icon: '📈' },
-  { id: 'deliberations', label: 'Deliberations', icon: '🧠' },
-  { id: 'signals',       label: 'Signals',       icon: '📡' },
-  { id: 'agents',        label: 'Agents',        icon: '🤖' },
-  { id: 'scanner',       label: 'Scanner',       icon: '🔍' },
-  { id: 'warroom',       label: 'War Room',      icon: '⚡' },
+  { id: 'portfolio',     label: 'Portfolio',     Icon: BarChart2  },
+  { id: 'deliberations', label: 'Deliberations', Icon: Brain      },
+  { id: 'signals',       label: 'Signals',       Icon: Radio      },
+  { id: 'agents',        label: 'Agents',        Icon: Bot        },
+  { id: 'scanner',       label: 'Scanner',       Icon: ScanSearch },
+  { id: 'warroom',       label: 'War Room',      Icon: Zap        },
 ];
 
 // ─── Connection probe ─────────────────────────────────────────────────────────
@@ -115,7 +116,6 @@ function Header() {
       <div className="flex items-center gap-3">
         {/* Logo mark */}
         <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#112233] border border-[#1e3a52] text-lg">
-          ⚡
         </div>
         <div>
           <h1 className="text-base font-extrabold text-white tracking-tight leading-none">
@@ -149,7 +149,7 @@ function Nav({ active, onSelect }) {
                 : 'text-[#64748b] border-transparent hover:text-[#94a3b8] hover:bg-[#0f2236]',
             ].join(' ')}
           >
-            <span className="text-sm">{tab.icon}</span>
+            <tab.Icon size={15} />
             {tab.label}
           </button>
         );
