@@ -910,14 +910,20 @@ async function runDeliberation(signalId) {
   try {
     round2Results = await runRound2(round1ResultsWithContext, deliberationId);
   } catch (err) {
-    console.error(`[orchestrator] Round 2 failed: ${err.message}`);
-    throw err;
+    // Round 2 failure is non-fatal — use empty rebuttals and continue to synthesis.
+    // This happens when Bear or Bull used neutral defaults and debate prompts fail.
+    console.warn(`[orchestrator] Round 2 failed (non-fatal) — continuing with empty rebuttals: ${err.message}`);
+    round2Results = {
+      bullRebuttal: { score: round1Results.bull.score, thesis: round1Results.bull.thesis, data: {} },
+      bearRebuttal: { score: round1Results.bear.score, thesis: round1Results.bear.thesis, data: {} },
+      quantCheck:   { consistent: true, conflictFlag: false, note: 'Round 2 skipped due to error' },
+    };
   }
 
   console.log(`[orchestrator] Step 5 ✓ — Round 2 complete`);
   events.emitRound2Complete(deliberationId, signal.id, {
-    bullRebuttal: round2Results?.bullRebuttal ?? '',
-    bearRebuttal: round2Results?.bearRebuttal ?? '',
+    bullRebuttal: round2Results?.bullRebuttal?.thesis ?? '',
+    bearRebuttal: round2Results?.bearRebuttal?.thesis ?? '',
   }).catch(() => {});
   events.emitRound3Start(deliberationId, signal.id).catch(() => {});
 
@@ -930,8 +936,14 @@ async function runDeliberation(signalId) {
   try {
     synthesisResult = await synthesise(round1ResultsWithContext, round2Results, deliberationId);
   } catch (err) {
-    console.error(`[orchestrator] Round 3 synthesis failed: ${err.message}`);
-    throw err;
+    // Round 3 failure — fall back to a conservative hold decision
+    console.error(`[orchestrator] Round 3 synthesis failed (non-fatal) — defaulting to hold: ${err.message}`);
+    synthesisResult = {
+      voteResult: 'error',
+      decision:   'hold',
+      reasoning:  `Synthesis failed: ${err.message}`,
+      positionNote: 'No position — synthesis error',
+    };
   }
 
   console.log(
