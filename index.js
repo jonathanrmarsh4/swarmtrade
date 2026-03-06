@@ -99,6 +99,9 @@ const { schedule: scheduleMarketScanner }   = require('./scripts/market-scanner.
 scheduleReflectionAgent();
 console.log('[startup] Reflection agent scheduled \u2014 runs nightly at 00:00');
 
+scheduleMarketScanner();
+console.log('[startup] Market scanner scheduled \u2014 runs every hour');
+
 
 // ── Step 6: HTTP server ───────────────────────────────────────────────────────
 // One server handles both the TradingView webhook and the health endpoint.
@@ -167,6 +170,7 @@ server.listen(PORT, () => {
   console.log('\u2502  Sentiment    : Crowd Thermometer + News Sentinel\u2502');
   console.log('\u2502  Trade mon    : every 60 s                       \u2502');
   console.log('\u2502  Reflection   : nightly at 00:00                 \u2502');
+  console.log('\u2502  Scanner      : every hour (top 100 pairs)       \u2502');
   console.log('\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518');
   console.log('');
 });
