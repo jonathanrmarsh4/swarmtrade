@@ -31,7 +31,7 @@ const risk           = require('../agents/risk/index.js');
 // Override via Railway env var when the paper-trading wallet is funded differently.
 const INITIAL_PORTFOLIO_VALUE_USD = Number(process.env.INITIAL_PORTFOLIO_VALUE_USD || 10_000);
 
-const ROUND1_TIMEOUT_MS = 10_000;
+const ROUND1_TIMEOUT_MS = 25_000;
 
 // ── Supabase client ───────────────────────────────────────────────────────────
 // Lazy singleton — matches the pattern used across all other modules in the repo.
