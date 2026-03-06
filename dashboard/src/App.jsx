@@ -4,6 +4,7 @@ import Portfolio from './components/Portfolio';
 import DeliberationLog from './components/DeliberationLog';
 import SignalHistory from './components/SignalHistory';
 import AgentReputation from './components/AgentReputation';
+import TestSignal from './components/TestSignal';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ export default function App() {
       <Nav active={activeTab} onSelect={setActiveTab} />
 
       <main className="flex-1 overflow-auto bg-grid">
-        {activeTab === 'portfolio'     && <Portfolio />}
+        {activeTab === 'portfolio'     && <div style={{display:'flex',flexDirection:'column',gap:0}}><div style={{padding:'20px 24px 0'}}><TestSignal /></div><Portfolio /></div>}
         {activeTab === 'deliberations' && <DeliberationLog />}
         {activeTab === 'signals'       && <SignalHistory />}
         {activeTab === 'agents'        && <AgentReputation />}
