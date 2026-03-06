@@ -775,6 +775,30 @@ async function runDeliberation(signalId) {
   const marketData = extractMarketData(signal);
   const macroData  = extractMacroData(signal);
 
+  // ── Live price fetch ───────────────────────────────────────────────────────
+  // TradingView alerts don't always include price. If price is 0 (missing),
+  // fetch it live from Binance public ticker so agents have real data to work with.
+  if (marketData.currentPrice === 0) {
+    try {
+      const symbol    = signal.asset.replace('/', '');
+      const tickerRes = await fetch(
+        `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`,
+        { signal: AbortSignal.timeout(5_000) },
+      );
+      if (tickerRes.ok) {
+        const ticker    = await tickerRes.json();
+        const livePrice = parseFloat(ticker.price);
+        if (livePrice > 0) {
+          marketData.currentPrice = livePrice;
+          marketData.atr          = parseFloat((livePrice * 0.02).toFixed(8));
+          console.log(`[orchestrator] Live price fetched — ${signal.asset} = $${livePrice}`);
+        }
+      }
+    } catch (priceErr) {
+      console.warn(`[orchestrator] Live price fetch failed (non-fatal): ${priceErr.message}`);
+    }
+  }
+
 
   // ── Step 3: Pre-flight sentiment check — News Sentinel gate ──────────────────
   // getSentimentSnapshot() reads from Supabase (no LLM). Calling it here before
