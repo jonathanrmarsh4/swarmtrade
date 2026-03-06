@@ -447,12 +447,13 @@ async function runBackgroundScan() {
   wsManager.sync([...watchlist.keys()]);
 
   try {
-    await persistScanResults(scanId, results);
-    await persistWatchlist();
+    // Insert scanner_runs FIRST — scanner_results has a FK dependency on it
     await getSupabase().from('scanner_runs').insert({
       id: scanId, total_assets: results.length, escalated: watchlist.size,
       duration_ms: Date.now() - startTime, scanned_at: new Date().toISOString(),
     });
+    await persistScanResults(scanId, results);
+    await persistWatchlist();
   } catch (err) {
     console.warn(`[scanner] Persist error (non-fatal): ${err.message}`);
   }
