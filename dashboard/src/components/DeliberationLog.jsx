@@ -5,6 +5,7 @@ import { CheckCircle, PauseCircle, Shield, TrendingUp, TrendingDown, MessageSqua
 
 import { useState } from 'react';
 import { useRealtimeTable } from '../lib/supabase';
+import PriceChart from './PriceChart';
 
 const C = {
   bg:        '#0D1B2A',
@@ -180,6 +181,15 @@ function DeliberationRow({ row, isExpanded, onToggle }) {
               <span style={{ fontWeight: 700, color: C.text }}>{row.macro_regime ?? '—'}</span>
             </div>
           </div>
+
+          {/* Price chart — shows market context for the decision */}
+          {row.asset && (
+            <PriceChart
+              asset={row.asset}
+              entryPrice={row.entry_price ?? null}
+              decision={row.final_decision}
+            />
+          )}
         </div>
       )}
     </div>
