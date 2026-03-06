@@ -40,7 +40,7 @@ const { executeTrade }    = require('../octobot/index.js');
 const TOP_N_ASSETS     = 100;   // how many assets to fetch from Binance
 const CANDLE_LIMIT     = 30;    // candles per asset (1h timeframe)
 const MIN_SIGNAL_SCORE = 2;     // minimum filters passed to escalate to swarm
-const MAX_ESCALATIONS  = 10;    // cap swarm calls per scan to control API cost
+const MAX_ESCALATIONS  = 5;     // cap swarm calls per scan to control API cost
 const SCAN_INTERVAL    = '0 * * * *'; // every hour at :00
 
 // RSI thresholds
@@ -50,8 +50,9 @@ const RSI_OVERBOUGHT  = 65;
 // Volume spike multiplier
 const VOLUME_SPIKE_MULTIPLIER = 2.0;
 
-// Stagger delay between swarm calls (ms) — avoids hammering Claude API
-const SWARM_STAGGER_MS = 3_000;
+// Stagger delay between swarm calls (ms) — each deliberation takes ~20s so
+// we wait for one to fully complete before starting the next
+const SWARM_STAGGER_MS = 30_000;
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 
