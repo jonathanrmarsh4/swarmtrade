@@ -378,6 +378,8 @@ async function runRound1(signalData, portfolioState) {
 
   const insertPayload = {
     signal_id:         signalData.id,
+    asset:             signalData.asset,
+    direction:         signalData.direction,
     bull_score:        validated.bull.score,
     bull_thesis:       validated.bull.thesis,
     bear_score:        validated.bear.score,
@@ -646,6 +648,7 @@ async function finaliseDeliberation(deliberationId, decision, riskVerdict) {
         final_decision:    decision,
         risk_approved:     riskVerdict.approved,
         position_size_pct: riskVerdict.positionSizePct,
+        entry_price:       riskVerdict.entryPrice ?? null,
         status:            'complete',
       })
       .eq('id', deliberationId);
@@ -976,6 +979,7 @@ async function runDeliberation(signalId) {
 
     try {
       riskVerdict = risk.evaluate(riskPortfolioState, proposedTrade);
+      riskVerdict.entryPrice = proposedTrade.entryPrice ?? null;
     } catch (err) {
       // Input validation error from the Risk Agent — treat as a veto.
       console.error(`[orchestrator] Risk Agent threw (invalid inputs): ${err.message}`);
