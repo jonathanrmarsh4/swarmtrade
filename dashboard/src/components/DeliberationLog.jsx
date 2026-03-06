@@ -1,4 +1,5 @@
 // DeliberationLog — displays the full committee reasoning for each trade decision.
+import { CheckCircle, PauseCircle, Shield, TrendingUp, TrendingDown, MessageSquare, Brain } from 'lucide-react';
 // Subscribes to Supabase deliberations table in real time.
 // Shows all agent theses, Round 2 rebuttals, Orchestrator synthesis, and Risk Agent decision.
 
@@ -21,9 +22,9 @@ const C = {
 
 function DecisionBadge({ decision }) {
   const styles = {
-    trade: { bg: `${C.green}18`, border: `${C.green}60`, color: C.green, label: '✅ Trade' },
-    hold:  { bg: `${C.amber}18`, border: `${C.amber}60`, color: C.amber, label: '⏸ Hold'  },
-    veto:  { bg: `${C.red}18`,   border: `${C.red}60`,   color: C.red,   label: '🛡 Veto'  },
+    trade: { bg: `${C.green}18`, border: `${C.green}60`, color: C.green, label: 'Trade',  Icon: CheckCircle },
+    hold:  { bg: `${C.amber}18`, border: `${C.amber}60`, color: C.amber, label: 'Hold',   Icon: PauseCircle  },
+    veto:  { bg: `${C.red}18`,   border: `${C.red}60`,   color: C.red,   label: 'Veto',   Icon: Shield       },
   };
   const s = styles[decision] ?? styles.hold;
   return (
@@ -122,9 +123,9 @@ function DeliberationRow({ row, isExpanded, onToggle }) {
         }}>
           {/* Score bars */}
           <div style={{ paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <ScoreBar label="🟢 Bull" score={row.bull_score} color={C.green} />
-            <ScoreBar label="🔴 Bear" score={row.bear_score} color={C.red} />
-            <ScoreBar label="💬 Sentiment" score={row.sentiment_score} color={C.blue} />
+            <ScoreBar label="Bull" score={row.bull_score} color={C.green} />
+            <ScoreBar label="Bear" score={row.bear_score} color={C.red} />
+            <ScoreBar label="Sentiment" score={row.sentiment_score} color={C.blue} />
           </div>
 
           {/* Theses */}
@@ -237,7 +238,7 @@ export default function DeliberationLog() {
           textAlign: 'center',
           color: C.textMuted,
         }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>🧠</div>
+          <Brain size={32} color={C.textMuted} style={{ marginBottom: 12 }} />
           <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>
             No deliberations yet
           </div>

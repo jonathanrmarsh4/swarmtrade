@@ -1,4 +1,5 @@
 import { TrendingUp, TrendingDown, Loader, CheckCircle, XCircle } from 'lucide-react';
+import { FlaskConical, Eye, EyeOff } from 'lucide-react';
 // TestSignal — manual signal firing panel for testing without TradingView.
 // Sends the same JSON payload that a real TradingView alert would send.
 
@@ -122,7 +123,7 @@ export default function TestSignal() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: C.text }}>🧪 Test Signal</h3>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}><FlaskConical size={14} color={C.blue} /> Test Signal</h3>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: C.textMuted }}>
             Fire a manual signal to trigger the swarm — no terminal needed
           </p>
@@ -161,7 +162,7 @@ export default function TestSignal() {
               fontSize: 12, padding: '8px 12px', cursor: 'pointer',
             }}
           >
-            {showSecret ? '🙈' : '👁'}
+            {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         </div>
       </div>

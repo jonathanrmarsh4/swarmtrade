@@ -1,4 +1,5 @@
 import { TrendingUp, TrendingDown, BarChart2, Globe, Activity, Shield } from 'lucide-react';
+import { BarChart2 } from 'lucide-react';
 // AgentReputation — displays weekly accuracy scores per agent.
 // Reads from Supabase agent_reputation table via useRealtimeTable.
 // Updated nightly by the Reflection Agent in /scripts/reflection-agent.js.
@@ -190,7 +191,7 @@ function InsufficientDataPlaceholder({ sampled }) {
       border: `1px dashed ${C.border}`,
       textAlign: 'center',
     }}>
-      <div style={{ fontSize: 22, marginBottom: 8 }}>📊</div>
+      <BarChart2 size={22} color={C.textMuted} style={{ marginBottom: 8 }} />
       <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.6 }}>
         Insufficient data —
         <br />

@@ -1,4 +1,5 @@
 import { Radio, FlaskConical, Brain, Database, Search, Clock } from 'lucide-react';
+import { Radio, Microscope, Brain, BarChart2, TrendingUp, TrendingDown, Search } from 'lucide-react';
 // Scanner — displays market scan results and escalation status.
 // Reads from scanner_runs and scanner_results tables in Supabase.
 // Updates in real-time as new scans complete.
@@ -55,7 +56,7 @@ function DirectionBadge({ direction }) {
       borderRadius: 20,
       padding: '2px 7px',
     }}>
-      {isLong ? '▲ LONG' : '▼ SHORT'}
+      {isLong ? <TrendingUp size={10} style={{marginRight:3}} /> : <TrendingDown size={10} style={{marginRight:3}} />}{isLong ? 'LONG' : 'SHORT'}
     </span>
   );
 }

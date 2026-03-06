@@ -1,4 +1,5 @@
 // SignalHistory — displays all TradingView signals received by the webhook.
+import { TrendingUp, TrendingDown, X, Radio } from 'lucide-react';
 // Subscribes to Supabase signals table in real time.
 // Shows asset, direction, timeframe, signal type, and whether a trade was triggered.
 
@@ -22,7 +23,7 @@ function DirectionBadge({ direction }) {
   const map = {
     long:  { color: C.green, label: '▲ Long'  },
     short: { color: C.red,   label: '▼ Short' },
-    close: { color: C.amber, label: '✕ Close' },
+    close: { color: C.amber, label: 'Close', Icon: X },
   };
   const d = map[direction?.toLowerCase()] ?? { color: C.textMuted, label: direction ?? '—' };
   return (
@@ -161,7 +162,7 @@ export default function SignalHistory() {
             textAlign: 'center',
             color: C.textMuted,
           }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📡</div>
+            <Radio size={32} color={C.textMuted} style={{ marginBottom: 12 }} />
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>
               Awaiting first signal
             </div>

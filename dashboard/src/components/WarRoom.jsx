@@ -4,6 +4,7 @@
 // agent committee deliberating in real time.
 
 import { useState, useEffect, useRef } from 'react';
+import { Zap, FlaskConical, CheckCircle, XCircle, Swords, MessageSquare, Brain, Scale, Shield, Flag, TrendingUp, TrendingDown, BarChart2, Globe, Activity, Clock } from 'lucide-react';
 import {
   Zap, FlaskConical, CheckCircle, XCircle, Swords, MessageSquare,
   Brain, Scale, Shield, Flag, TrendingUp, TrendingDown, BarChart2,
@@ -164,7 +165,7 @@ function DebateCard({ payload, type }) {
       {payload.bull_rebuttal && (
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: C.green, letterSpacing: '0.1em', marginBottom: 4 }}>
-            🟢 BULL REBUTTAL
+            BULL REBUTTAL
           </div>
           <p style={{ margin: 0, fontSize: 12, color: C.textMuted, lineHeight: 1.6, fontStyle: 'italic' }}>
             "{payload.bull_rebuttal}"
@@ -174,7 +175,7 @@ function DebateCard({ payload, type }) {
       {payload.bear_rebuttal && (
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: C.red, letterSpacing: '0.1em', marginBottom: 4 }}>
-            🔴 BEAR REBUTTAL
+            BEAR REBUTTAL
           </div>
           <p style={{ margin: 0, fontSize: 12, color: C.textMuted, lineHeight: 1.6, fontStyle: 'italic' }}>
             "{payload.bear_rebuttal}"
@@ -218,7 +219,8 @@ function SynthesisCard({ payload, type }) {
 
 function RiskGateCard({ payload }) {
   const color = payload.approved ? C.green : C.red;
-  const label = payload.approved ? '✓ APPROVED' : '✗ VETOED';
+  const label = payload.approved ? 'APPROVED' : 'VETOED';
+  const RiskIcon = payload.approved ? CheckCircle : XCircle;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -228,8 +230,9 @@ function RiskGateCard({ payload }) {
           background: `${color}18`, border: `1px solid ${color}60`,
           borderRadius: 20, padding: '4px 14px', letterSpacing: '0.08em',
           boxShadow: `0 0 12px ${color}30`,
+          display: 'flex', alignItems: 'center', gap: 6,
         }}>
-          {label}
+          <RiskIcon size={13} color={color} /> {label}
         </span>
         {payload.approved && payload.position_size_pct > 0 && (
           <span style={{ fontSize: 12, color: C.textMuted }}>
