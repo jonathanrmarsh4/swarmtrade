@@ -28,6 +28,7 @@ const AGENTS = [
   { key: 'quant',     label: 'Quant',     emoji: '📊' },
   { key: 'macro',     label: 'Macro',     emoji: '🌍' },
   { key: 'sentiment', label: 'Sentiment', emoji: '💬' },
+  { key: 'risk',      label: 'Risk Gate', emoji: '🛡' },
 ];
 
 // Dark trading dashboard palette

@@ -94,7 +94,7 @@ function SystemBar({ signalCount, signalStatus }) {
         </span>
         <span className="hidden md:block text-[#1e3a52]">|</span>
         <span className="hidden md:block">
-          Phase: <span className="text-[#60a5fa] font-semibold">1 — Foundation</span>
+          Phase: <span className="text-[#60a5fa] font-semibold">2 — Swarm Active</span>
         </span>
       </div>
       <span className="tabular-nums">{now} AEST</span>
