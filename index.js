@@ -108,7 +108,23 @@ const { handleRequest: handleWebhook } = require('./webhook/index.js');
 
 const PORT = process.env.PORT || 3000;
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
 const server = http.createServer((req, res) => {
+  // CORS preflight — browsers send this before the real POST
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS_HEADERS);
+    res.end();
+    return;
+  }
+
+  // Attach CORS headers to every response
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
+
   // Health check — Railway and external uptime monitors poll this endpoint.
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
