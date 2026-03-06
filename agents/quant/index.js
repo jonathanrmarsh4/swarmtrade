@@ -19,6 +19,37 @@ const { buildQuantPrompt, buildSentimentCrossCheckPrompt } = require('./prompt.j
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ── Retry helper ──────────────────────────────────────────────────────────────
+// Retries the LLM call up to 3 times with exponential backoff on 529 overload.
+async function callLLMWithRetry(system, user, model, maxTokens) {
+  const MAX_RETRIES = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await anthropic.messages.create({
+        model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: user }],
+      });
+      return response.content[0]?.text ?? '';
+    } catch (err) {
+      lastErr = err;
+      const isOverload = err?.status === 529 || err?.message?.includes('overloaded');
+      if (isOverload && attempt < MAX_RETRIES) {
+        const waitMs = attempt * 10_000; // 10s, 20s
+        console.warn(`[agent] API overloaded (attempt ${attempt}/${MAX_RETRIES}) — retrying in ${waitMs/1000}s`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+
+
 
 // ── calculateMetrics ──────────────────────────────────────────────────────────
 // Pure JavaScript — no LLM, no side effects.

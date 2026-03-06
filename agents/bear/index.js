@@ -8,6 +8,37 @@ const { buildRound1Prompt, buildRound2Prompt } = require('./prompt.js');
 // Instantiated once at module load. API key sourced from Railway env only.
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ── Retry helper ──────────────────────────────────────────────────────────────
+// Retries the LLM call up to 3 times with exponential backoff on 529 overload.
+async function callLLMWithRetry(system, user, model, maxTokens) {
+  const MAX_RETRIES = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await anthropic.messages.create({
+        model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: user }],
+      });
+      return response.content[0]?.text ?? '';
+    } catch (err) {
+      lastErr = err;
+      const isOverload = err?.status === 529 || err?.message?.includes('overloaded');
+      if (isOverload && attempt < MAX_RETRIES) {
+        const waitMs = attempt * 10_000; // 10s, 20s
+        console.warn(`[agent] API overloaded (attempt ${attempt}/${MAX_RETRIES}) — retrying in ${waitMs/1000}s`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+
+
 // ── Output validator ──────────────────────────────────────────────────────────
 // Validates the parsed LLM response against AGENT_OUTPUT_SCHEMA.bear before
 // anything is written to Supabase. Throws on invalid output — never silently swallow.
@@ -36,14 +67,7 @@ function validateOutput(parsed) {
 // Sends one prompt pair to the Anthropic API and returns the parsed JSON output.
 // Model and token budget are always sourced from config/models.js — never inline.
 async function callLLM(system, user) {
-  const response = await anthropic.messages.create({
-    model:      MODELS.bear,          // ← from config/models.js only
-    max_tokens: TOKEN_BUDGETS.bear,   // ← from config/models.js only
-    system,
-    messages: [{ role: 'user', content: user }],
-  });
-
-  const raw = response.content[0]?.text ?? '';
+  const raw = await callLLMWithRetry(system, user, MODELS.bear, TOKEN_BUDGETS.bear);
 
   let parsed;
   try {

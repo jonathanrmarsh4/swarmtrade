@@ -20,6 +20,37 @@ const { buildMacroPrompt } = require('./prompt.js');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ── Retry helper ──────────────────────────────────────────────────────────────
+// Retries the LLM call up to 3 times with exponential backoff on 529 overload.
+async function callLLMWithRetry(system, user, model, maxTokens) {
+  const MAX_RETRIES = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await anthropic.messages.create({
+        model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: user }],
+      });
+      return response.content[0]?.text ?? '';
+    } catch (err) {
+      lastErr = err;
+      const isOverload = err?.status === 529 || err?.message?.includes('overloaded');
+      if (isOverload && attempt < MAX_RETRIES) {
+        const waitMs = attempt * 10_000; // 10s, 20s
+        console.warn(`[agent] API overloaded (attempt ${attempt}/${MAX_RETRIES}) — retrying in ${waitMs/1000}s`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+
+
 // Valid regime values — 'unknown' is explicitly excluded and treated as a bug
 const VALID_REGIMES = new Set(['risk-on', 'risk-off', 'neutral']);
 
@@ -79,14 +110,7 @@ function validateOutput(parsed) {
 // @returns {Promise<object>} — parsed JSON object from the LLM
 // @throws {Error} if the API call fails or the response is not valid JSON
 async function callLLM(system, user) {
-  const response = await anthropic.messages.create({
-    model:      MODELS.macro,          // ← from config/models.js only
-    max_tokens: TOKEN_BUDGETS.macro,   // ← from config/models.js only
-    system,
-    messages: [{ role: 'user', content: user }],
-  });
-
-  const raw = response.content[0]?.text ?? '';
+  const raw = await callLLMWithRetry(system, user, MODELS.macro, TOKEN_BUDGETS.macro);
 
   let parsed;
   try {
