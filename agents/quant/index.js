@@ -179,7 +179,12 @@ async function formatOutput(metrics, signalData) {
 
   let parsed;
   try {
-    parsed = JSON.parse(rawText);
+    // Extract JSON robustly — handles markdown fences and trailing commentary
+    let cleanText1 = rawText;
+    const fm1 = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fm1) { cleanText1 = fm1[1].trim(); }
+    else { const s=rawText.indexOf('{'),e=rawText.lastIndexOf('}'); if(s!==-1&&e>s) cleanText1=rawText.slice(s,e+1); }
+    parsed = JSON.parse(cleanText1);
   } catch (err) {
     throw new Error(`Quant Agent: failed to parse Haiku response as JSON — ${err.message}\nRaw response: ${rawText}`);
   }
@@ -269,8 +274,12 @@ async function crossCheckSentiment(quantOutput, sentimentScore) {
 
   let parsed;
   try {
-    const clean = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-    parsed = JSON.parse(clean);
+    // Extract JSON robustly — handles markdown fences and trailing commentary
+    let cleanText2 = rawText;
+    const fm2 = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fm2) { cleanText2 = fm2[1].trim(); }
+    else { const s=rawText.indexOf('{'),e=rawText.lastIndexOf('}'); if(s!==-1&&e>s) cleanText2=rawText.slice(s,e+1); }
+    parsed = JSON.parse(cleanText2);
   } catch (err) {
     throw new Error(
       `[quant] crossCheckSentiment — failed to parse Haiku response as JSON: ${err.message}\nRaw: ${rawText}`

@@ -114,8 +114,21 @@ async function callLLM(system, user) {
 
   let parsed;
   try {
-    // Strip accidental markdown fences if the model wraps its JSON
-    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    // Extract JSON object robustly — handles markdown fences, trailing commentary,
+    // and any other text the model wraps around the JSON.
+    let clean = raw;
+    // Try to find a JSON block inside markdown fences first
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenceMatch) {
+      clean = fenceMatch[1].trim();
+    } else {
+      // Otherwise find the first { ... } block
+      const start = raw.indexOf('{');
+      const end   = raw.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        clean = raw.slice(start, end + 1);
+      }
+    }
     parsed = JSON.parse(clean);
   } catch {
     throw new Error(`[macro] LLM returned non-JSON output:\n${raw}`);
