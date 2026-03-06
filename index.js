@@ -95,6 +95,7 @@ console.log('[startup] Trade monitor started \u2014 checking open positions ever
 // Orchestrator to calibrate vote influence over time.
 
 const { schedule: scheduleReflectionAgent } = require('./scripts/reflection-agent.js');
+const { schedule: scheduleMarketScanner }   = require('./scripts/market-scanner.js');
 scheduleReflectionAgent();
 console.log('[startup] Reflection agent scheduled \u2014 runs nightly at 00:00');
 

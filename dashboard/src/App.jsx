@@ -5,6 +5,7 @@ import DeliberationLog from './components/DeliberationLog';
 import SignalHistory from './components/SignalHistory';
 import AgentReputation from './components/AgentReputation';
 import TestSignal from './components/TestSignal';
+import Scanner from './components/Scanner';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'deliberations', label: 'Deliberations', icon: '🧠' },
   { id: 'signals',       label: 'Signals',       icon: '📡' },
   { id: 'agents',        label: 'Agents',        icon: '🤖' },
+  { id: 'scanner',       label: 'Scanner',       icon: '🔍' },
 ];
 
 // ─── Connection probe ─────────────────────────────────────────────────────────
@@ -171,6 +173,7 @@ export default function App() {
         {activeTab === 'deliberations' && <DeliberationLog />}
         {activeTab === 'signals'       && <SignalHistory />}
         {activeTab === 'agents'        && <AgentReputation />}
+        {activeTab === 'scanner'       && <Scanner />}
       </main>
     </div>
   );
