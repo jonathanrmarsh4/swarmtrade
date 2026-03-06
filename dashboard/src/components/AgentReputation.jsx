@@ -1,5 +1,4 @@
 import { TrendingUp, TrendingDown, BarChart2, Globe, Activity, Shield } from 'lucide-react';
-import { BarChart2 } from 'lucide-react';
 // AgentReputation — displays weekly accuracy scores per agent.
 // Reads from Supabase agent_reputation table via useRealtimeTable.
 // Updated nightly by the Reflection Agent in /scripts/reflection-agent.js.
