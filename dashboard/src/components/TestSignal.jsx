@@ -1,13 +1,11 @@
 // TestSignal — manual signal firing panel for testing without TradingView.
 // Sends the same JSON payload that a real TradingView alert would send.
-// Only visible in PAPER mode — cannot be used in live trading.
 
 import { useState } from 'react';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://swarmtrade-production.up.railway.app';
-const WEBHOOK_SECRET = import.meta.env.VITE_WEBHOOK_SECRET || '';
+const BACKEND_URL = 'https://swarmtrade-production.up.railway.app';
 
-const ASSETS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT'];
+const ASSETS     = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT'];
 const TIMEFRAMES = ['1', '5', '15', '60', '240', 'D'];
 const SIGNAL_TYPES = ['macd_crossover', 'breakout', 'rsi_oversold', 'rsi_overbought', 'ema_cross', 'manual'];
 
@@ -33,49 +31,34 @@ function Select({ label, value, onChange, options }) {
         value={value}
         onChange={e => onChange(e.target.value)}
         style={{
-          background: C.bg,
-          border: `1px solid ${C.border}`,
-          borderRadius: 7,
-          color: C.text,
-          fontSize: 13,
-          fontWeight: 600,
-          padding: '8px 10px',
-          cursor: 'pointer',
-          outline: 'none',
+          background: C.bg, border: `1px solid ${C.border}`,
+          borderRadius: 7, color: C.text, fontSize: 13,
+          fontWeight: 600, padding: '8px 10px', cursor: 'pointer', outline: 'none',
         }}
       >
-        {options.map(o => (
-          <option key={o} value={o}>{o}</option>
-        ))}
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>
   );
 }
 
 function FireButton({ direction, onClick, loading }) {
-  const isLong  = direction === 'long';
-  const color   = isLong ? C.green : C.red;
-  const label   = isLong ? '🟢 Fire Long' : '🔴 Fire Short';
-
+  const isLong = direction === 'long';
+  const color  = isLong ? C.green : C.red;
   return (
     <button
       onClick={onClick}
       disabled={loading}
       style={{
-        flex: 1,
-        padding: '12px 0',
+        flex: 1, padding: '12px 0',
         background: loading ? C.surface : `${color}18`,
         border: `1px solid ${loading ? C.border : color}`,
-        borderRadius: 8,
-        color: loading ? C.textMuted : color,
-        fontSize: 13,
-        fontWeight: 800,
-        cursor: loading ? 'not-allowed' : 'pointer',
-        letterSpacing: '0.03em',
+        borderRadius: 8, color: loading ? C.textMuted : color,
+        fontSize: 13, fontWeight: 800, cursor: loading ? 'not-allowed' : 'pointer',
         transition: 'all 0.15s ease',
       }}
     >
-      {loading ? '⏳ Sending…' : label}
+      {loading ? '⏳ Sending…' : isLong ? '🟢 Fire Long' : '🔴 Fire Short'}
     </button>
   );
 }
@@ -84,10 +67,16 @@ export default function TestSignal() {
   const [asset,      setAsset]      = useState('BTCUSDT');
   const [timeframe,  setTimeframe]  = useState('60');
   const [signalType, setSignalType] = useState('macd_crossover');
-  const [loading,    setLoading]    = useState(null); // 'long' | 'short' | null
-  const [lastResult, setLastResult] = useState(null); // { ok, message, direction }
+  const [secret,     setSecret]     = useState('');
+  const [showSecret, setShowSecret] = useState(false);
+  const [loading,    setLoading]    = useState(null);
+  const [lastResult, setLastResult] = useState(null);
 
   async function fire(direction) {
+    if (!secret.trim()) {
+      setLastResult({ ok: false, message: 'Enter your webhook secret first (from Railway → TRADINGVIEW_WEBHOOK_SECRET)' });
+      return;
+    }
     setLoading(direction);
     setLastResult(null);
 
@@ -96,36 +85,23 @@ export default function TestSignal() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          secret:      WEBHOOK_SECRET,
+          secret: secret.trim(),
           asset,
           direction,
           timeframe,
           signal_type: signalType,
-          // price omitted — backend will fetch live from Binance
         }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.received) {
-        setLastResult({
-          ok:        true,
-          direction,
-          message:   `Signal accepted — id: ${data.signal_id?.slice(0, 8)}…`,
-        });
+        setLastResult({ ok: true, direction, message: `Signal accepted — id: ${data.signal_id?.slice(0, 8)}…` });
       } else {
-        setLastResult({
-          ok:      false,
-          direction,
-          message: data.error ?? `HTTP ${res.status}`,
-        });
+        setLastResult({ ok: false, message: data.error ?? `HTTP ${res.status} — check secret is correct` });
       }
     } catch (err) {
-      setLastResult({
-        ok:      false,
-        direction,
-        message: `Network error: ${err.message}`,
-      });
+      setLastResult({ ok: false, message: `Network error: ${err.message}` });
     } finally {
       setLoading(null);
     }
@@ -133,36 +109,56 @@ export default function TestSignal() {
 
   return (
     <div style={{
-      background: C.surface,
-      border: `1px solid ${C.border}`,
-      borderRadius: 12,
-      padding: '20px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 16,
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 12, padding: '20px',
+      display: 'flex', flexDirection: 'column', gap: 16,
     }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: C.text }}>
-            🧪 Test Signal
-          </h3>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: C.text }}>🧪 Test Signal</h3>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: C.textMuted }}>
             Fire a manual signal to trigger the swarm — no terminal needed
           </p>
         </div>
         <span style={{
-          fontSize: 10, fontWeight: 700,
-          color: C.amber,
-          background: `${C.amber}18`,
-          border: `1px solid ${C.amber}40`,
-          borderRadius: 20,
-          padding: '3px 10px',
-          letterSpacing: '0.08em',
+          fontSize: 10, fontWeight: 700, color: C.amber,
+          background: `${C.amber}18`, border: `1px solid ${C.amber}40`,
+          borderRadius: 20, padding: '3px 10px', letterSpacing: '0.08em',
         }}>
           PAPER ONLY
         </span>
+      </div>
+
+      {/* Secret input */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: C.textMuted }}>
+          Webhook Secret <span style={{ color: C.red }}>*</span>
+        </label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type={showSecret ? 'text' : 'password'}
+            value={secret}
+            onChange={e => setSecret(e.target.value)}
+            placeholder="Paste from Railway → TRADINGVIEW_WEBHOOK_SECRET"
+            style={{
+              flex: 1, background: C.bg, border: `1px solid ${secret ? C.blue : C.border}`,
+              borderRadius: 7, color: C.text, fontSize: 12,
+              padding: '8px 12px', outline: 'none',
+            }}
+          />
+          <button
+            onClick={() => setShowSecret(s => !s)}
+            style={{
+              background: C.bg, border: `1px solid ${C.border}`,
+              borderRadius: 7, color: C.textMuted,
+              fontSize: 12, padding: '8px 12px', cursor: 'pointer',
+            }}
+          >
+            {showSecret ? '🙈' : '👁'}
+          </button>
+        </div>
       </div>
 
       {/* Controls */}
@@ -181,17 +177,11 @@ export default function TestSignal() {
       {/* Result */}
       {lastResult && (
         <div style={{
-          padding: '10px 14px',
-          background: C.bg,
-          border: `1px solid ${lastResult.ok
-            ? (lastResult.direction === 'long' ? C.green : C.red)
-            : C.red}40`,
-          borderRadius: 8,
-          fontSize: 12,
+          padding: '10px 14px', background: C.bg,
+          border: `1px solid ${lastResult.ok ? (lastResult.direction === 'long' ? C.green : C.red) : C.red}40`,
+          borderRadius: 8, fontSize: 12,
           color: lastResult.ok ? C.text : C.red,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
+          display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <span>{lastResult.ok ? '✓' : '✗'}</span>
           <span>{lastResult.message}</span>
