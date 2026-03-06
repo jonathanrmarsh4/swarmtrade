@@ -6,6 +6,7 @@ import SignalHistory from './components/SignalHistory';
 import AgentReputation from './components/AgentReputation';
 import TestSignal from './components/TestSignal';
 import Scanner from './components/Scanner';
+import Analyst from './components/Analyst';
 import WarRoom from './components/WarRoom';
 import { BarChart, Brain, Radio, Bot, ScanLine, Zap } from 'lucide-react';
 
@@ -77,6 +78,8 @@ function ConnectionStatus({ count, status }) {
     <div className="flex items-center gap-2 text-[#4ade80] text-xs font-semibold">
       <span className="pulse-dot" />
       Supabase connected · {count.toLocaleString()} signal{count !== 1 ? 's' : ''} logged
+      {/* Floating analyst — always mounted, appears over everything */}
+      <Analyst />
     </div>
   );
 }
@@ -104,6 +107,8 @@ function SystemBar({ signalCount, signalStatus }) {
         </span>
       </div>
       <span className="tabular-nums">{now} AEST</span>
+      {/* Floating analyst — always mounted, appears over everything */}
+      <Analyst />
     </div>
   );
 }
@@ -178,6 +183,8 @@ export default function App() {
         {activeTab === 'scanner'       && <Scanner />}
         {activeTab === 'warroom'       && <WarRoom />}
       </main>
+      {/* Floating analyst — always mounted, appears over everything */}
+      <Analyst />
     </div>
   );
 }
