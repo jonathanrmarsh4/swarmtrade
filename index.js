@@ -31,14 +31,25 @@ if (missing.length > 0) {
 console.log('[startup] Environment variables validated \u2713');
 
 // Detect and log broker execution mode
-const hasAlpaca  = !!(process.env.ALPACA_API_KEY && process.env.ALPACA_API_SECRET);
+const hasTestnet = !!(
+  process.env.BINANCE_TESTNET === 'true' &&
+  process.env.BINANCE_TESTNET_API_KEY &&
+  process.env.BINANCE_TESTNET_API_SECRET
+);
 const hasOctoBot = !!process.env.OCTOBOT_WEBHOOK_URL;
-if (hasAlpaca) {
-  console.log('[startup] Broker mode: ALPACA PAPER TRADING \u2713');
+
+console.log('[startup] Broker env check —',
+  `BINANCE_TESTNET=${process.env.BINANCE_TESTNET}`,
+  `API_KEY=${process.env.BINANCE_TESTNET_API_KEY ? 'set' : 'missing'}`,
+  `API_SECRET=${process.env.BINANCE_TESTNET_API_SECRET ? 'set' : 'missing'}`
+);
+
+if (hasTestnet) {
+  console.log('[startup] Broker mode: BINANCE TESTNET \u2713');
 } else if (hasOctoBot) {
   console.log('[startup] Broker mode: OCTOBOT WEBHOOK');
 } else {
-  console.warn('[startup] WARNING: No broker configured. Running in SIMULATION mode — trades logged but not executed. Add ALPACA_API_KEY + ALPACA_API_SECRET in Railway to enable real paper trading.');
+  console.warn('[startup] WARNING: No broker configured — SIMULATION mode. Set BINANCE_TESTNET=true + BINANCE_TESTNET_API_KEY + BINANCE_TESTNET_API_SECRET in Railway.');
 }
 
 
