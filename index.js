@@ -109,6 +109,7 @@ console.log('[startup] Market scanner scheduled \u2014 runs every hour');
 // encapsulated in webhook/index.js — this file only owns routing and server lifecycle.
 
 const { handleRequest: handleWebhook } = require('./webhook/index.js');
+const { handleAnalystChat }             = require('./analyst/index.js');
 
 const PORT = process.env.PORT || 3000;
 
@@ -138,6 +139,18 @@ const server = http.createServer((req, res) => {
       uptime:      process.uptime(),
       timestamp:   new Date(),
     }));
+    return;
+  }
+
+  // Analyst chat proxy — forwards messages to Anthropic API server-side
+  if (req.method === 'POST' && req.url === '/analyst/chat') {
+    handleAnalystChat(req, res).catch(err => {
+      console.error('[server] Analyst error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Internal server error' }));
+      }
+    });
     return;
   }
 

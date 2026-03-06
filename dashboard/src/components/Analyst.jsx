@@ -364,12 +364,11 @@ ${snapshot.reflections.slice(0,2).map(r => `- ${r.created_at?.slice(0,10)}: ${r.
         .filter(m => m.content !== '...')
         .map(m => ({ role: m.role, content: m.content }));
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const BACKEND = 'https://swarmtrade-production.up.railway.app';
+      const response = await fetch(`${BACKEND}/analyst/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
           system: SYSTEM_PROMPT,
           messages: [
             ...history,
@@ -378,8 +377,13 @@ ${snapshot.reflections.slice(0,2).map(r => `- ${r.created_at?.slice(0,10)}: ${r.
         }),
       });
 
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error ?? `HTTP ${response.status}`);
+      }
+
       const data = await response.json();
-      const reply = data.content?.[0]?.text ?? 'Sorry, I had trouble generating a response.';
+      const reply = data.content ?? 'Sorry, I had trouble generating a response.';
 
       setMessages(prev => [
         ...prev.filter(m => m.content !== '...'),
