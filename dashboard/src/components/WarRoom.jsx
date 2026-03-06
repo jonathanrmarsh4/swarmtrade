@@ -245,8 +245,33 @@ export default function WarRoom() {
 
   useEffect(() => { import('../lib/supabase').then(m => setSb(m.supabase)); }, []);
 
+  // Merge new events into state, replacing the feed if signal changed
+  const mergeEvents = (incoming, signalId) => {
+    setCurrentSignalId(prev => {
+      if (prev && signalId && signalId !== prev) {
+        setEvents(incoming);
+      } else {
+        setEvents(p => {
+          const existingIds = new Set(p.map(x => x.id));
+          const fresh = incoming.filter(e => !existingIds.has(e.id));
+          if (!fresh.length) return p;
+          setNewIds(ids => new Set([...ids, ...fresh.map(e => e.id)]));
+          fresh.forEach(e => {
+            setIsActive(true);
+            setTimeout(() => setNewIds(ids => { const s = new Set(ids); s.delete(e.id); return s; }), 2000);
+            if (e.event_type === 'deliberation_done') setTimeout(() => setIsActive(false), 5000);
+          });
+          return [...p, ...fresh].sort((a, b) => a.sequence - b.sequence);
+        });
+      }
+      return signalId ?? prev;
+    });
+  };
+
   useEffect(() => {
     if (!sb) return;
+
+    // Load latest signal's events on mount
     async function loadLatest() {
       const { data: latest } = await sb.from('deliberation_events').select('signal_id').order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (!latest?.signal_id) return;
@@ -255,21 +280,24 @@ export default function WarRoom() {
     }
     loadLatest();
 
+    // Realtime subscription (works when Supabase Realtime is enabled)
     const channel = sb.channel('war_room_events')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'deliberation_events' }, ({ new: e }) => {
-        setCurrentSignalId(prev => {
-          if (prev && e.signal_id && e.signal_id !== prev) { setEvents([e]); }
-          else { setEvents(p => p.find(x => x.id === e.id) ? p : [...p, e].sort((a, b) => a.sequence - b.sequence)); }
-          return e.signal_id ?? prev;
-        });
-        setNewIds(prev => new Set([...prev, e.id]));
-        setIsActive(true);
-        setTimeout(() => setNewIds(prev => { const s = new Set(prev); s.delete(e.id); return s; }), 2000);
-        if (e.event_type === 'deliberation_done') setTimeout(() => setIsActive(false), 5000);
+        mergeEvents([e], e.signal_id);
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[WarRoom] Realtime status:', status);
+      });
 
-    return () => sb.removeChannel(channel);
+    // Polling fallback — catches events even if Realtime is off/slow
+    const poll = setInterval(async () => {
+      const { data: latest } = await sb.from('deliberation_events').select('signal_id').order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (!latest?.signal_id) return;
+      const { data } = await sb.from('deliberation_events').select('*').eq('signal_id', latest.signal_id).order('sequence', { ascending: true });
+      if (data?.length) mergeEvents(data, latest.signal_id);
+    }, 3000);
+
+    return () => { sb.removeChannel(channel); clearInterval(poll); };
   }, [sb]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [events.length]);
