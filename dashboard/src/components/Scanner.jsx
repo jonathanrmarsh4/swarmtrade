@@ -1,5 +1,4 @@
-import { Radio, FlaskConical, Brain, Database, Search, Clock } from 'lucide-react';
-import { Radio, Microscope, Brain, BarChart2, TrendingUp, TrendingDown, Search } from 'lucide-react';
+import { BarChart, Brain, Clock, Database, FlaskConical, Microscope, Radio, Search, TrendingDown, TrendingUp } from 'lucide-react';
 // Scanner — displays market scan results and escalation status.
 // Reads from scanner_runs and scanner_results tables in Supabase.
 // Updates in real-time as new scans complete.

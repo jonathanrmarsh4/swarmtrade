@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Zap, FlaskConical, CheckCircle, XCircle, Swords, MessageSquare,
-  Brain, Scale, Shield, Flag, TrendingUp, TrendingDown, BarChart2,
+  Brain, Scale, Shield, Flag, TrendingUp, TrendingDown, BarChart,
   Globe, Activity, Clock, AlertTriangle
 } from 'lucide-react';
 
@@ -29,7 +29,7 @@ const EVENT_CONFIG = {
 const AGENT_META = {
   bull:         { Icon: TrendingUp,   label: 'Bull Agent',      color: C.green  },
   bear:         { Icon: TrendingDown, label: 'Bear Agent',      color: C.red    },
-  quant:        { Icon: BarChart2,    label: 'Quant Agent',     color: C.blue   },
+  quant:        { Icon: BarChart,    label: 'Quant Agent',     color: C.blue   },
   macro:        { Icon: Globe,        label: 'Macro Agent',     color: C.teal   },
   sentiment:    { Icon: Activity,     label: 'Sentiment Agent', color: C.amber  },
   risk:         { Icon: Shield,       label: 'Risk Gate',       color: C.purple },

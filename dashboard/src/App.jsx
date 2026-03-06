@@ -7,16 +7,16 @@ import AgentReputation from './components/AgentReputation';
 import TestSignal from './components/TestSignal';
 import Scanner from './components/Scanner';
 import WarRoom from './components/WarRoom';
-import { BarChart2, Brain, Radio, Bot, ScanSearch, Zap } from 'lucide-react';
+import { BarChart, Brain, Radio, Bot, ScanLine, Zap } from 'lucide-react';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'portfolio',     label: 'Portfolio',     Icon: BarChart2  },
+  { id: 'portfolio',     label: 'Portfolio',     Icon: BarChart  },
   { id: 'deliberations', label: 'Deliberations', Icon: Brain      },
   { id: 'signals',       label: 'Signals',       Icon: Radio      },
   { id: 'agents',        label: 'Agents',        Icon: Bot        },
-  { id: 'scanner',       label: 'Scanner',       Icon: ScanSearch },
+  { id: 'scanner',       label: 'Scanner',       Icon: ScanLine },
   { id: 'warroom',       label: 'War Room',      Icon: Zap        },
 ];
 

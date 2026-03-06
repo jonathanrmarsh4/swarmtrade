@@ -1,5 +1,4 @@
-import { TrendingUp, TrendingDown, Loader, CheckCircle, XCircle } from 'lucide-react';
-import { FlaskConical, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle, Eye, EyeOff, FlaskConical, Loader, TrendingDown, TrendingUp, XCircle } from 'lucide-react';
 // TestSignal — manual signal firing panel for testing without TradingView.
 // Sends the same JSON payload that a real TradingView alert would send.
 

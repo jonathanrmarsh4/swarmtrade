@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, BarChart2, Globe, Activity, Shield } from 'lucide-react';
+import { TrendingUp, TrendingDown, BarChart as BarChartIcon, Globe, Activity, Shield } from 'lucide-react';
 // AgentReputation — displays weekly accuracy scores per agent.
 // Reads from Supabase agent_reputation table via useRealtimeTable.
 // Updated nightly by the Reflection Agent in /scripts/reflection-agent.js.
@@ -26,7 +26,7 @@ const MIN_TRADES = 10;
 const AGENTS = [
   { key: 'bull',      label: 'Bull',      Icon: TrendingUp   },
   { key: 'bear',      label: 'Bear',      Icon: TrendingDown },
-  { key: 'quant',     label: 'Quant',     Icon: BarChart2    },
+  { key: 'quant',     label: 'Quant',     Icon: BarChartIcon },
   { key: 'macro',     label: 'Macro',     Icon: Globe        },
   { key: 'sentiment', label: 'Sentiment', Icon: Activity     },
   { key: 'risk',      label: 'Risk Gate', Icon: Shield       },
@@ -190,7 +190,7 @@ function InsufficientDataPlaceholder({ sampled }) {
       border: `1px dashed ${C.border}`,
       textAlign: 'center',
     }}>
-      <BarChart2 size={22} color={C.textMuted} style={{ marginBottom: 8 }} />
+      <BarChartIcon size={22} color={C.textMuted} style={{ marginBottom: 8 }} />
       <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.6 }}>
         Insufficient data —
         <br />

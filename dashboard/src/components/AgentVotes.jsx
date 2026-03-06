@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, Globe, BarChart2, Activity, Shield, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, Globe, BarChart, Activity, Shield, CheckCircle, XCircle, Clock } from 'lucide-react';
 // AgentVotes — displays the vote breakdown per deliberation.
 // Shows all 6 agents: Bull, Bear, Quant, Macro, Sentiment, Risk
 // Used as an embedded sub-component inside DeliberationLog.
