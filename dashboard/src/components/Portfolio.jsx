@@ -270,15 +270,18 @@ function TradeDetailPanel({ trade, onClose }) {
   const [deliberation, setDeliberation] = useState(null);
   const [livePrice, setLivePrice] = useState(null);
 
-  const symbol = trade.asset?.replace('/', '') ?? '';
-  const isLong = trade.direction === 'long';
-
-  // Fetch deliberation for context
+  // Fetch deliberation — also used to fill in asset/direction for old trades
+  // that were created before migration 016 added those columns to the trades table
   useEffect(() => {
     if (!trade.deliberation_id) return;
     supabase.from('deliberations').select('*').eq('id', trade.deliberation_id).single()
       .then(({ data }) => setDeliberation(data));
   }, [trade.deliberation_id]);
+
+  // Resolve asset: prefer trade.asset, fall back to deliberation.asset once loaded
+  const resolvedAsset = trade.asset || deliberation?.asset || null;
+  const symbol  = resolvedAsset?.replace('/', '') ?? '';
+  const isLong  = (trade.direction || deliberation?.direction) === 'long';
 
   // Live price
   useEffect(() => {
@@ -324,10 +327,10 @@ function TradeDetailPanel({ trade, onClose }) {
             </div>
             <div>
               <div style={{ fontSize: 20, fontWeight: 900, color: C.text, letterSpacing: '0.02em' }}>
-                {trade.asset?.replace('USDT', '/USDT') ?? '—'}
+                {resolvedAsset?.replace('USDT', '/USDT') ?? '—'}
               </div>
               <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>
-                {isLong ? '▲ LONG' : '▼ SHORT'} · {trade.timeframe ?? '—'} · {trade.trading_mode ?? 'dayTrade'}
+                {isLong ? '▲ LONG' : '▼ SHORT'} · {trade.timeframe ?? '—'} · {trade.trading_mode ?? deliberation?.trading_mode ?? 'dayTrade'}
               </div>
             </div>
           </div>
@@ -352,7 +355,7 @@ function TradeDetailPanel({ trade, onClose }) {
         {/* Chart */}
         <div style={{ marginBottom: 16 }}>
           <CandlestickChart
-            asset={trade.asset}
+            asset={resolvedAsset}
             entryPrice={trade.entry_price}
             stopLoss={trade.stop_loss}
             takeProfit={trade.take_profit}
@@ -362,7 +365,7 @@ function TradeDetailPanel({ trade, onClose }) {
 
         {/* RSI indicator */}
         <div style={{ marginBottom: 16 }}>
-          <RSIIndicator asset={trade.asset} timeframe={trade.timeframe} />
+          <RSIIndicator asset={resolvedAsset} timeframe={trade.timeframe} />
         </div>
 
         {/* Trade levels */}
