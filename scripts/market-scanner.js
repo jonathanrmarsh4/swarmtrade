@@ -195,11 +195,7 @@ async function loadScannerConfig() {
   return SCANNER_CONFIG_DEFAULTS;
 }
 
-  const universe     = await loadTradingUniverse(); // reads from system_config, falls back to defaults
-  const scannerCfg   = await loadScannerConfig();
-  const cooldownMs   = scannerCfg.escalationCooldownMinutes * 60 * 1000;
-  const topN         = scannerCfg.topNCandidates;
-  const minScore     = scannerCfg.minScoreToEscalate;
+  const universe = await loadTradingUniverse();
   const symbols = JSON.stringify(universe);
   const url = 'https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(symbols);
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
@@ -436,10 +432,35 @@ async function runBackgroundScan() {
   console.log(`[scanner] Multi-profile scan — ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Perth' })} AWST`);
   console.log('════════════════════════════════════════════════');
 
-  // Load trading universe from DB — editable via Settings page, no redeploy needed
+  // Load scanner config + trading universe from DB — editable via Settings, no redeploy needed
+  const scannerCfg = await loadScannerConfig();
+  const cooldownMs = scannerCfg.escalationCooldownMinutes * 60 * 1000;
+  const topN       = scannerCfg.topNCandidates;
+  const minScore   = scannerCfg.minScoreToEscalate;
+
+  // ── Position capacity check ───────────────────────────────────────────────
+  // Skip the entire scan if we're already at max concurrent positions.
+  // The risk gate would veto any new entry anyway — no point burning API calls.
+  try {
+    const { data: riskCfg } = await getSupabase()
+      .from('system_config').select('value').eq('key', 'risk_rules').single();
+    const maxPositions = riskCfg?.value?.maxConcurrentPositions ?? 3;
+    const { count } = await getSupabase()
+      .from('trades')
+      .select('id', { count: 'exact', head: true })
+      .is('exit_time', null);
+    if (count >= maxPositions) {
+      console.log(`[scanner] ⏸  At capacity — ${count}/${maxPositions} open positions. Scan suspended until a trade closes.`);
+      return;
+    }
+    console.log(`[scanner] Capacity check — ${count}/${maxPositions} open positions. Proceeding.`);
+  } catch (err) {
+    console.warn(`[scanner] Capacity check failed (proceeding anyway): ${err.message}`);
+  }
+
   let pairs;
   try {
-    pairs = await fetchTopPairs();  // fetchTopPairs calls loadTradingUniverse() internally
+    pairs = await fetchTopPairs();
   } catch (err) {
     console.error(`[scanner] Fetch failed: ${err.message}`); return;
   }
