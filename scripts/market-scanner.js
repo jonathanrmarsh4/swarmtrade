@@ -165,7 +165,7 @@ async function loadTradingUniverse() {
 }
 
 async function fetchTopPairs() {
-  const universe = await loadTradingUniverse();
+  const universe = await loadTradingUniverse(); // reads from system_config, falls back to defaults
   const symbols = JSON.stringify(universe);
   const url = 'https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(symbols);
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
@@ -402,13 +402,10 @@ async function runBackgroundScan() {
   console.log(`[scanner] Multi-profile scan — ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Perth' })} AWST`);
   console.log('════════════════════════════════════════════════');
 
-  // Fetch top 100 pairs once (shared across all profiles)
-  // Load trading universe from DB (Settings page can update without redeploy)
-  const universe = await loadTradingUniverse();
-
+  // Load trading universe from DB — editable via Settings page, no redeploy needed
   let pairs;
   try {
-    pairs = await fetchTopPairs(universe);
+    pairs = await fetchTopPairs();  // fetchTopPairs calls loadTradingUniverse() internally
   } catch (err) {
     console.error(`[scanner] Fetch failed: ${err.message}`); return;
   }
