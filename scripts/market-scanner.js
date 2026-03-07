@@ -418,6 +418,7 @@ async function runBackgroundScan() {
   // 4 profiles × 100 pairs in parallel = 400 simultaneous requests → rate limited → empty results.
   // Sequential with stagger: each profile scans top 40 pairs with 300ms between requests.
   const profileResults = {};
+  const allCandidates    = [];  // collects eligible pairs across all profiles for global top-3
   const TOP_PAIRS_PER_SCAN = 40; // reduce from 100 — top 40 by volume catches everything meaningful
 
   for (const profileId of ALL_PROFILE_IDS) {
@@ -443,51 +444,16 @@ async function runBackgroundScan() {
     results.sort((a, b) => b.score - a.score);
     profileResults[profileId] = results;
 
-    // Diagnostic: log top 5 scoring pairs so we can see if threshold is the problem
+    // Log top scores per profile for visibility
     const top5 = results.slice(0, 5);
     console.log(`[scanner:${profile.label}] Top scores: ${top5.map(r => `${r.symbol}=${r.score}(${r.rsi.toFixed(0)}rsi)`).join(' | ')}`);
-    const eligible = results.filter(r => r.score >= 1);
-    console.log(`[scanner:${profile.label}] ${eligible.length} pairs score>=1, ${results.filter(r=>r.score>=2).length} score>=2 (threshold=1)`);
 
     state.updateWatchlist(results);
     state.syncWS();
 
-    // Direct scan escalation: collect eligible pairs, run deliberations SERIALLY.
-    // Previously used fire-and-forget async IIFEs — when score>=1 fires for all
-    // 10 pairs across 4 profiles simultaneously, Claude API gets hammered and
-    // calls fail silently. Now: top 3 per profile, awaited one at a time, 2s gap.
-    const eligibleForEscalation = results.filter(r => r.score >= 1 && state.canEscalate(r.symbol));
-    const toEscalate = eligibleForEscalation.slice(0, 3); // max 3 per profile per scan
-    console.log(`[scanner:${profile.label}] ${toEscalate.length} pairs eligible for deliberation`);
-
-    for (const r of toEscalate) {
-      state.cooldowns.set(r.symbol, Date.now());
-      const macdSig = r.macdCross === 'bullish' ? 'bullish_crossover'
-                    : r.macdCross === 'bearish' ? 'bearish_crossover' : 'neutral';
-      console.log(`[scanner:${profile.label}] Escalating ${r.symbol} score=${r.score} RSI=${r.rsi} vol=${r.volumeRatio.toFixed(1)}x`);
-      try {
-        const { data, error } = await getSupabase().from('signals').insert({
-          asset: r.symbol, direction: r.direction, timeframe: profile.signalTimeframe,
-          signal_type: 'scan_direct',
-          raw_payload: {
-            asset: r.symbol, direction: r.direction, price: r.price, rsi: r.rsi,
-            volume_ratio: r.volumeRatio, macd_signal: macdSig,
-            atr: r.atr, support: r.support, resistance: r.resistance,
-            signals: r.signals, trigger_types: ['scan_conviction', `score_${r.score}`],
-            signal_type: 'scan_direct', trading_mode: profileId,
-          },
-        }).select('id').single();
-        if (error) { console.error(`[scanner:${profile.label}] Signal insert failed: ${error.message}`); continue; }
-        console.log(`[scanner:${profile.label}] Signal written id=${data.id} — awaiting deliberation...`);
-        const result = await runDeliberation(data.id);
-        console.log(`[scanner:${profile.label}] Deliberation complete — ${r.symbol} decision=${result?.decision ?? 'unknown'}`);
-        if (result && result.tradeInstruction) await executeTrade(result.tradeInstruction);
-      } catch (err) {
-        console.error(`[scanner:${profile.label}] Escalation failed for ${r.symbol}: ${err.message}`);
-        console.error(err.stack);
-      }
-      // 2s between deliberations — stay within Claude API rate limits
-      await new Promise(res => setTimeout(res, 2000));
+    // Collect all eligible candidates — deliberation happens AFTER all profiles scan
+    for (const r of results.filter(r => r.score >= 1 && state.canEscalate(r.symbol))) {
+      allCandidates.push({ ...r, profileId, profile });
     }
 
     console.log(`[scanner:${profile.label}] Watchlist (${state.watchlist.size}/${MAX_WATCHLIST_SIZE}) on ${profile.candleInterval} candles:`);
@@ -497,6 +463,49 @@ async function runBackgroundScan() {
       console.log(`  ${sym.padEnd(14)} score=${c.score} ${c.direction} RSI=${c.rsi} [${cdStr}]`);
     }
   } // end for...of ALL_PROFILE_IDS
+
+  // ── Global top-3 deliberation ─────────────────────────────────────────────
+  // All 4 profiles have now scanned. Pick the 3 highest-scoring candidates
+  // across all profiles and deliberate those only — hard cap of 3 Claude API
+  // call chains per scan cycle regardless of how many pairs scored.
+  allCandidates.sort((a, b) => b.score - a.score);
+  const toDeliberate = allCandidates.slice(0, 3);
+  console.log(`\n[scanner] === Global top-${toDeliberate.length} candidates for deliberation ===`);
+  toDeliberate.forEach((r, i) =>
+    console.log(`  ${i+1}. ${r.symbol} score=${r.score} profile=${r.profile.label} RSI=${r.rsi} dir=${r.direction} [${r.signals.join(', ')}]`)
+  );
+
+  for (const r of toDeliberate) {
+    const state   = profileStates[r.profileId];
+    const profile = r.profile;
+    state.cooldowns.set(r.symbol, Date.now());
+    const macdSig = r.macdCross === 'bullish' ? 'bullish_crossover'
+                  : r.macdCross === 'bearish' ? 'bearish_crossover' : 'neutral';
+    console.log(`[scanner] Escalating ${r.symbol} (${profile.label}) score=${r.score} RSI=${r.rsi}`);
+    try {
+      const { data, error } = await getSupabase().from('signals').insert({
+        asset: r.symbol, direction: r.direction, timeframe: profile.signalTimeframe,
+        signal_type: 'scan_direct',
+        raw_payload: {
+          asset: r.symbol, direction: r.direction, price: r.price, rsi: r.rsi,
+          volume_ratio: r.volumeRatio, macd_signal: macdSig,
+          atr: r.atr, support: r.support, resistance: r.resistance,
+          signals: r.signals, trigger_types: ['scan_conviction', `score_${r.score}`],
+          signal_type: 'scan_direct', trading_mode: r.profileId,
+        },
+      }).select('id').single();
+      if (error) { console.error(`[scanner] Signal insert failed: ${error.message}`); continue; }
+      console.log(`[scanner] Signal written id=${data.id} — awaiting deliberation...`);
+      const result = await runDeliberation(data.id);
+      console.log(`[scanner] Deliberation complete — ${r.symbol} decision=${result?.decision ?? 'unknown'}`);
+      if (result && result.tradeInstruction) await executeTrade(result.tradeInstruction);
+    } catch (err) {
+      console.error(`[scanner] Escalation failed for ${r.symbol}: ${err.message}`);
+      console.error(err.stack);
+    }
+    // 2s gap between deliberations
+    await new Promise(res => setTimeout(res, 2000));
+  }
 
   // Persist scan results + watchlists to Supabase
   try {
