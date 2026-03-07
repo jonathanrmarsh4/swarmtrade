@@ -251,7 +251,8 @@ async function persistWatchlist() {
   for (const [symbol, c] of watchlist.entries()) {
     const { error } = await getSupabase().from('watchlist_active').upsert({
       symbol, score: c.score, reasons: c.signals, price: c.price,
-      direction: c.direction, expires_at: expiry, created_at: new Date().toISOString(),
+      direction: c.direction, rsi: c.rsi, volume_ratio: c.volumeRatio,
+      expires_at: expiry, created_at: new Date().toISOString(),
     }, { onConflict: 'symbol' });
     if (error) console.warn(`[scanner] Watchlist upsert error ${symbol}: ${error.message}`);
   }

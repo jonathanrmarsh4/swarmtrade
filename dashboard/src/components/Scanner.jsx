@@ -1,4 +1,4 @@
-import { BarChart, Brain, Clock, Database, FlaskConical, Microscope, Radio, Search, TrendingDown, TrendingUp, Zap } from 'lucide-react';
+import { BarChart, Brain, Clock, Database, FlaskConical, Microscope, Radio, Search, TrendingDown, TrendingUp, Zap, Wifi, WifiOff, Activity } from 'lucide-react';
 // Scanner — displays market scan results and escalation status.
 // Reads from scanner_runs and scanner_results tables in Supabase.
 // Updates in real-time as new scans complete.
@@ -300,6 +300,267 @@ function AssetTable({ results }) {
 const RSI_OVERSOLD_DISPLAY  = 35;
 const RSI_OVERBOUGHT_DISPLAY = 65;
 
+
+// ── WebSocket Watchlist Monitor ───────────────────────────────────────────────
+// Reads from watchlist_active table (written by scanner every 10 min).
+// Subscribes to realtime updates so it reflects live state without refresh.
+
+function RsiBar({ rsi }) {
+  const pct      = Math.min(100, Math.max(0, rsi));
+  const color    = rsi < 30 ? C.green : rsi > 70 ? C.red : C.blue;
+  const label    = rsi < 30 ? 'OVERSOLD' : rsi > 70 ? 'OVERBOUGHT' : 'NEUTRAL';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: '0.06em' }}>{label}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color }}>{rsi}</span>
+      </div>
+      <div style={{ height: 4, borderRadius: 99, background: C.border, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99, transition: 'width 0.4s ease' }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 9, color: C.textMuted }}>0</span>
+        <span style={{ fontSize: 9, color: C.green }}>30</span>
+        <span style={{ fontSize: 9, color: C.red }}>70</span>
+        <span style={{ fontSize: 9, color: C.textMuted }}>100</span>
+      </div>
+    </div>
+  );
+}
+
+function WatchlistCard({ entry, wsConnected }) {
+  const isLong   = entry.direction === 'long';
+  const dirColor = isLong ? C.green : C.red;
+  const reasons  = Array.isArray(entry.reasons) ? entry.reasons : [];
+
+  return (
+    <div style={{
+      background: C.surface,
+      border: `1px solid ${wsConnected ? C.blue + '60' : C.border}`,
+      borderRadius: 10,
+      padding: '14px 16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Live pulse indicator */}
+      {wsConnected && (
+        <div style={{
+          position: 'absolute', top: 10, right: 10,
+          display: 'flex', alignItems: 'center', gap: 5,
+        }}>
+          <span style={{
+            width: 7, height: 7, borderRadius: '50%',
+            background: C.blue,
+            boxShadow: `0 0 6px ${C.blue}`,
+            animation: 'pulse-ws 2s ease-in-out infinite',
+            display: 'inline-block',
+          }} />
+          <span style={{ fontSize: 9, color: C.blue, fontWeight: 700, letterSpacing: '0.06em' }}>LIVE</span>
+        </div>
+      )}
+
+      {/* Symbol + direction */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color: C.text, fontFamily: 'monospace' }}>
+          {entry.symbol}
+        </span>
+        <span style={{
+          fontSize: 10, fontWeight: 700, color: dirColor,
+          background: `${dirColor}18`, border: `1px solid ${dirColor}40`,
+          borderRadius: 20, padding: '2px 8px',
+        }}>
+          {isLong ? '▲ LONG' : '▼ SHORT'}
+        </span>
+        <span style={{
+          fontSize: 10, fontWeight: 700, color: C.amber,
+          background: `${C.amber}18`, border: `1px solid ${C.amber}40`,
+          borderRadius: 20, padding: '2px 8px',
+        }}>
+          SCORE {entry.score}
+        </span>
+      </div>
+
+      {/* RSI bar */}
+      {entry.rsi != null && <RsiBar rsi={entry.rsi} />}
+
+      {/* Signals that triggered watchlist entry */}
+      {reasons.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+          {reasons.map((r, i) => (
+            <span key={i} style={{
+              fontSize: 10, color: C.textMuted,
+              background: C.bg, border: `1px solid ${C.border}`,
+              borderRadius: 4, padding: '2px 7px',
+            }}>{r}</span>
+          ))}
+        </div>
+      )}
+
+      {/* Monitoring conditions legend */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6,
+        borderTop: `1px solid ${C.border}`, paddingTop: 10,
+      }}>
+        {[
+          { label: 'RSI Cross', desc: `< ${30} or > ${70}` },
+          { label: 'Vol Spike', desc: '> 2× avg' },
+          { label: 'Breakout',  desc: 'S/R level' },
+        ].map((c, i) => (
+          <div key={i} style={{
+            background: C.bg, borderRadius: 6, padding: '6px 8px',
+            border: `1px solid ${C.border}`,
+          }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: C.blue, letterSpacing: '0.06em' }}>{c.label}</div>
+            <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>{c.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 10, color: C.textMuted }}>
+        Price: <span style={{ color: C.text, fontWeight: 600 }}>${Number(entry.price).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+        <span style={{ marginLeft: 12 }}>
+          Watching since: <span style={{ color: C.text }}>{new Date(entry.created_at).toLocaleTimeString('en-AU', { timeZone: 'Australia/Perth', hour: '2-digit', minute: '2-digit' })} AWST</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function WatchlistMonitor() {
+  const [entries,     setEntries]     = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  async function fetchWatchlist() {
+    const { data } = await supabase
+      .from('watchlist_active')
+      .select('*')
+      .order('score', { ascending: false });
+    setEntries(data ?? []);
+    setLastUpdated(new Date());
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    // Inject pulse-ws keyframe if not already present
+    if (!document.getElementById('ws-monitor-styles')) {
+      const style = document.createElement('style');
+      style.id = 'ws-monitor-styles';
+      style.textContent = `
+        @keyframes pulse-ws {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.4; transform: scale(0.85); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    fetchWatchlist();
+
+    const channel = supabase
+      .channel('watchlist_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'watchlist_active' }, () => {
+        fetchWatchlist();
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  const hasEntries = entries.length > 0;
+
+  return (
+    <div style={{
+      background: C.surface,
+      border: `1px solid ${C.border}`,
+      borderRadius: 12,
+      padding: '18px 20px',
+      marginBottom: 20,
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 8,
+            background: hasEntries ? `${C.blue}15` : `${C.textMuted}10`,
+            border: `1px solid ${hasEntries ? C.blue + '40' : C.border}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {hasEntries ? <Wifi size={15} color={C.blue} /> : <WifiOff size={15} color={C.textMuted} />}
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+              WebSocket Monitor
+              {hasEntries && (
+                <span style={{
+                  marginLeft: 8, fontSize: 10, fontWeight: 700,
+                  color: C.blue, background: `${C.blue}18`,
+                  border: `1px solid ${C.blue}40`,
+                  borderRadius: 20, padding: '2px 8px',
+                }}>
+                  {entries.length} ACTIVE
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>
+              Live 1m kline streams · Escalates to swarm when 2 conditions fire within 5 min
+            </div>
+          </div>
+        </div>
+        {lastUpdated && (
+          <div style={{ fontSize: 10, color: C.textMuted, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Activity size={11} />
+            Updated {lastUpdated.toLocaleTimeString('en-AU', { timeZone: 'Australia/Perth', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ color: C.textMuted, fontSize: 13, padding: '12px 0' }}>Loading watchlist…</div>
+      ) : !hasEntries ? (
+        <div style={{
+          padding: '24px', textAlign: 'center',
+          background: C.bg, border: `1px dashed ${C.border}`,
+          borderRadius: 8, color: C.textMuted, fontSize: 13,
+        }}>
+          <WifiOff size={28} color="#334155" style={{ marginBottom: 10 }} />
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>No pairs on watchlist yet</div>
+          <div style={{ fontSize: 12 }}>Watchlist populates after the first 10-min scan completes</div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {entries.map(entry => (
+            <WatchlistCard key={entry.symbol} entry={entry} wsConnected={true} />
+          ))}
+        </div>
+      )}
+
+      {/* Escalation rules reminder */}
+      {hasEntries && (
+        <div style={{
+          marginTop: 14, padding: '10px 14px',
+          background: C.bg, border: `1px solid ${C.border}`,
+          borderRadius: 8, display: 'flex', gap: 20,
+        }}>
+          {[
+            { label: 'Trigger window', value: '5 minutes' },
+            { label: 'Conditions needed', value: 'Any 2 of 3' },
+            { label: 'Cooldown per pair', value: '30 minutes' },
+            { label: 'Max streams', value: '5 concurrent' },
+          ].map((s, i) => (
+            <div key={i}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{s.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: 2 }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Root component ────────────────────────────────────────────────────────────
 
 export default function Scanner() {
@@ -383,6 +644,9 @@ export default function Scanner() {
           </div>
         ))}
       </div>
+
+      {/* WebSocket Watchlist Monitor */}
+      <WatchlistMonitor />
 
       {/* Last scan meta */}
       {loadingRun ? (
