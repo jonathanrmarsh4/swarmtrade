@@ -1,7 +1,7 @@
 // SignalHistory — displays all TradingView signals received by the webhook.
-import { TrendingUp, TrendingDown, X, Radio } from 'lucide-react';
 // Subscribes to Supabase signals table in real time.
 // Shows asset, direction, timeframe, signal type, and whether a trade was triggered.
+import { TrendingUp, TrendingDown, X, Radio, FlaskConical, Webhook, Wifi, ScanLine, Tv } from 'lucide-react';
 
 import { useRealtimeTable } from '../lib/supabase';
 
@@ -41,6 +41,56 @@ function DirectionBadge({ direction }) {
   );
 }
 
+// ─── Origin badge ─────────────────────────────────────────────────────────────
+// Maps signal_type to a human-readable label, colour, and icon.
+// Two-level mapping: first we derive the ORIGIN (where it came from),
+// then the TRIGGER (what technical condition fired).
+
+function OriginBadge({ signalType }) {
+  // Derive origin from signal_type
+  const origins = {
+    websocket_trigger: { label: 'WebSocket',   color: '#2dd4bf', Icon: Wifi         },
+    scanner:           { label: 'Scanner',     color: '#a78bfa', Icon: ScanLine     },
+    manual:            { label: 'Manual',      color: '#f59e0b', Icon: FlaskConical },
+    tradingview:       { label: 'TradingView', color: '#60a5fa', Icon: Tv           },
+  };
+
+  // TradingView signal types
+  const tvTypes = new Set(['macd_crossover', 'breakout', 'rsi_oversold', 'rsi_overbought', 'ema_cross', 'ema_crossover']);
+
+  const key = signalType?.toLowerCase() ?? '';
+  let origin = origins[key];
+
+  // If not a direct match, check if it's a known TradingView signal type
+  if (!origin && tvTypes.has(key)) origin = origins.tradingview;
+
+  // Fallback for unknown types
+  if (!origin) origin = { label: signalType ?? 'Unknown', color: '#64748b', Icon: Radio };
+
+  const { label, color, Icon } = origin;
+
+  return (
+    <span style={{
+      display:        'inline-flex',
+      alignItems:     'center',
+      gap:            5,
+      fontSize:       10,
+      fontWeight:     700,
+      letterSpacing:  '0.06em',
+      textTransform:  'uppercase',
+      color,
+      background:     `${color}15`,
+      border:         `1px solid ${color}40`,
+      borderRadius:   20,
+      padding:        '3px 9px',
+      whiteSpace:     'nowrap',
+    }}>
+      <Icon size={10} />
+      {label}
+    </span>
+  );
+}
+
 // ─── Signal row ───────────────────────────────────────────────────────────────
 
 function SignalRow({ signal }) {
@@ -54,8 +104,8 @@ function SignalRow({ signal }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'auto 1fr auto auto auto',
-      gap: '0 16px',
+      gridTemplateColumns: 'auto 1fr auto auto auto auto',
+      gap: '0 14px',
       padding: '12px 16px',
       borderBottom: `1px solid ${C.border}`,
       alignItems: 'center',
@@ -65,14 +115,8 @@ function SignalRow({ signal }) {
       <span style={{ fontSize: 11, color: C.textMuted, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
         {ts}
       </span>
-      <div>
-        <span style={{ fontWeight: 800 }}>{signal.asset ?? '—'}</span>
-        {signal.signal_type && (
-          <span style={{ color: C.textMuted, marginLeft: 8, fontSize: 11 }}>
-            {signal.signal_type}
-          </span>
-        )}
-      </div>
+      <span style={{ fontWeight: 800 }}>{signal.asset ?? '—'}</span>
+      <OriginBadge signalType={signal.signal_type} />
       <DirectionBadge direction={signal.direction} />
       <span style={{
         fontSize: 11,
@@ -111,7 +155,7 @@ export default function SignalHistory() {
           Signal History
         </h2>
         <p style={{ margin: '6px 0 0', fontSize: 13, color: C.textMuted }}>
-          All TradingView alerts received · Latest 50 · Real-time
+          All signals · Latest 50 · Real-time · Colour-coded by origin
         </p>
       </div>
 
@@ -134,7 +178,7 @@ export default function SignalHistory() {
         {/* Table header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'auto 1fr auto auto auto',
+          gridTemplateColumns: 'auto 1fr auto auto auto auto',
           gap: '0 16px',
           padding: '10px 16px',
           borderBottom: `1px solid ${C.border}`,
@@ -146,7 +190,8 @@ export default function SignalHistory() {
           background: C.bg,
         }}>
           <span>Time</span>
-          <span>Asset · Type</span>
+          <span>Asset</span>
+          <span>Origin</span>
           <span>Direction</span>
           <span>TF</span>
           <span>ID</span>
