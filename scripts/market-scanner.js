@@ -227,8 +227,8 @@ class ProfileState {
     this.wsConns      = new Map();   // symbol → WebSocket
   }
 
-  canEscalate(symbol) {
-    return (Date.now() - (this.cooldowns.get(symbol) ?? 0)) > ESCALATION_COOLDOWN_MS;
+  canEscalate(symbol, cooldownMs = ESCALATION_COOLDOWN_MS) {
+    return (Date.now() - (this.cooldowns.get(symbol) ?? 0)) > cooldownMs;
   }
 
   recordSignal(symbol, type) {
@@ -503,7 +503,7 @@ async function runBackgroundScan() {
     state.syncWS();
 
     // Collect all eligible candidates — deliberation happens AFTER all profiles scan
-    for (const r of results.filter(r => r.score >= 1 && state.canEscalate(r.symbol))) {
+    for (const r of results.filter(r => r.score >= 1 && state.canEscalate(r.symbol, cooldownMs))) {
       allCandidates.push({ ...r, profileId, profile });
     }
 
