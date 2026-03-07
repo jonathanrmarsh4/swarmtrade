@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import TestSignal from './TestSignal';
-import { Settings as SettingsIcon, FlaskConical, Webhook, Shield, Clock, Globe, Check, Crosshair, Plus, X, RefreshCw, TrendingUp, Target, Activity, ChevronDown, ChevronUp } from 'lucide-react';
+import { Settings as SettingsIcon, FlaskConical, Webhook, Shield, Clock, Globe, Check, Crosshair, Plus, X, RefreshCw, TrendingUp, Target, Activity, ChevronDown, ChevronUp, ScanLine } from 'lucide-react';
 import { useTimezone, TIMEZONE_GROUPS, ALL_ZONES } from '../lib/timezone';
 import { supabase } from '../lib/supabase';
+
+const BACKEND = import.meta.env.VITE_BACKEND_URL ?? 'https://swarmtrade-production.up.railway.app';
 
 const C = {
   bg:        '#0D1B2A',
