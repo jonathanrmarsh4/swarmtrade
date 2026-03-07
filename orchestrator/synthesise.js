@@ -114,7 +114,12 @@ async function fetchAgentWeights() {
 // @param {string} direction — 'long' | 'short' | 'close'
 // @returns {{ bull, bear, quant, macro, sentiment }}
 function normalizeScores(r1, direction) {
-  const quantScore = r1.quant.expectedValue > 0 ? 70 : 30;
+  // Bootstrap mode: sampleSize < 10 means no historical data, not a bad edge.
+  // Neutral 50 so quant doesn't drag the vote down when it has nothing to say.
+  // Once 10+ trades are closed, EV > 0 → 70 (positive edge) or EV ≤ 0 → 30 (negative edge).
+  const quantScore = r1.quant.sampleSize < 10
+    ? 50
+    : r1.quant.expectedValue > 0 ? 70 : 30;
 
   // Macro base score: how supportive is the macro environment for taking a trade?
   // Risk-on favours longs; risk-off favours exits/shorts.

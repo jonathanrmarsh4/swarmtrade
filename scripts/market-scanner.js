@@ -263,7 +263,19 @@ class ProfileState {
       }
     }
 
+    // Standard escalation: 2+ distinct live conditions within window
     if (windowTypes.size >= SIGNALS_REQUIRED && this.canEscalate(symbol)) {
+      this._escalate(symbol, windowTypes, kline.close).catch(e =>
+        console.error(`[ws:${this.profile.label}] Escalation error ${symbol}: ${e.message}`)
+      );
+      return;
+    }
+
+    // Fast-track escalation: scan already gave high conviction — one live condition confirms
+    // Score ≥ 3 means RSI + volume spike + MACD all aligned at scan time.
+    // A single live WebSocket confirmation (any type) is sufficient to escalate.
+    if (candidate && candidate.score >= 3 && windowTypes.size >= 1 && this.canEscalate(symbol)) {
+      console.log(`[ws:${this.profile.label}] ${symbol} fast-track escalation — scan score=${candidate.score} + live condition`);
       this._escalate(symbol, windowTypes, kline.close).catch(e =>
         console.error(`[ws:${this.profile.label}] Escalation error ${symbol}: ${e.message}`)
       );
@@ -380,6 +392,21 @@ async function runBackgroundScan() {
 
     state.updateWatchlist(results);
     state.syncWS();
+
+    // Direct escalation for exceptional scan signals:
+    // score≥3 with volume spike ≥10× is strong enough to trigger without waiting for WebSocket.
+    // This catches big moves that happen between scan cycles.
+    for (const r of results.slice(0, 10)) {
+      if (r.score >= 3 && r.volumeRatio >= 10 && state.canEscalate(r.symbol)) {
+        const candidate = state.watchlist.get(r.symbol);
+        if (candidate) {
+          console.log(`[scanner:${profile.label}] ⚡ Direct escalation — ${r.symbol} score=${r.score} vol=${r.volumeRatio.toFixed(1)}x`);
+          state._escalate(r.symbol, new Set(['scan_high_conviction']), r.price).catch(e =>
+            console.error(`[scanner:${profile.label}] Direct escalation error: ${e.message}`)
+          );
+        }
+      }
+    }
 
     console.log(`[scanner:${profile.label}] Watchlist (${state.watchlist.size}/${MAX_WATCHLIST_SIZE}) on ${profile.candleInterval} candles:`);
     for (const [sym, c] of state.watchlist.entries()) {

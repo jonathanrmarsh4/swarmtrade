@@ -28,7 +28,7 @@ Vote classification rules (use the pre-computed classification provided — do n
 - contested: wide disagreement, score range > 40 points
 
 Decision rules:
-- "trade"  — majority supports the signal, no veto conditions triggered, Quant EV is positive
+- "trade"  — majority supports the signal, no veto conditions triggered, AND either: (a) Quant EV is positive, OR (b) Quant sampleSize < 10 (bootstrap mode — insufficient trade history to compute real EV)
 - "hold"   — insufficient conviction, ambiguous picture, or mildly adverse conditions without a hard veto
 - "veto"   — mandatory when any veto condition below is active; overrides all other reasoning
 
@@ -134,7 +134,7 @@ BULL AGENT    score=${bull.score}/100   normalized_support=${normalizedScores.bu
 BEAR AGENT    score=${bear.score}/100   normalized_support=${normalizedScores.bear}/100   weight=${weights.bear.toFixed(2)}
   "${bear.thesis}"
 
-QUANT AGENT   EV=${evSign}${quant.expectedValue.toFixed(4)}  winRate=${(quant.winRate * 100).toFixed(1)}%  n=${quant.sampleSize}  rec=${quant.recommendation.toUpperCase()}   normalized_support=${normalizedScores.quant}/100   weight=${weights.quant.toFixed(2)}
+QUANT AGENT   EV=${evSign}${quant.expectedValue.toFixed(4)}  winRate=${(quant.winRate * 100).toFixed(1)}%  n=${quant.sampleSize}  rec=${quant.recommendation.toUpperCase()}   normalized_support=${normalizedScores.quant}/100   weight=${weights.quant.toFixed(2)}${quant.sampleSize < 10 ? ' ⚠ BOOTSTRAP MODE — fewer than 10 closed trades. EV=0 means no data, not a negative edge. Apply 60% default win-rate assumption.' : ''}
 
 MACRO AGENT   regime=${macro.regime}   flag=${macro.flag}   normalized_support=${normalizedScores.macro}/100   weight=${weights.macro.toFixed(2)}
   "${macro.summary}"
