@@ -151,12 +151,32 @@ function normalizeScores(r1, direction) {
   //   Extreme Greed(76-100): score 20-30  — danger zone, strongly reduce support
   //
   // This matches the interpretation guide in the sentiment prompt itself.
+  // Long support curve — contrarian for extremes:
+  //   Extreme Fear  (0-25):  55-65  — panic = contrarian buy zone
+  //   Fear         (26-45):  45-55  — cautious, roughly neutral
+  //   Neutral      (46-55):  55-60  — balanced, slightly supportive
+  //   Greed        (56-75):  35-45  — extended, reduce long support
+  //   Extreme Greed(76-100): 20-30  — danger zone, strongly reduce
   function sentimentToLongSupport(s) {
     if (s <= 25)  return 55 + Math.round((25 - s) / 25 * 10);  // 55-65
     if (s <= 45)  return 45 + Math.round((45 - s) / 20 * 10);  // 45-55
     if (s <= 55)  return 55 + Math.round((s - 45) / 10 *  5);  // 55-60
     if (s <= 75)  return 45 - Math.round((s - 55) / 20 * 10);  // 35-45
     return        30  - Math.round((s - 75) / 25 * 10);          // 20-30
+  }
+
+  // Short support curve — independent, NOT a simple inversion of longs:
+  //   Extreme Fear  (0-25):  45-55  — panic selling already in progress, fade with caution
+  //   Fear         (26-45):  55-65  — fear building = short opportunities emerging
+  //   Neutral      (46-55):  50-55  — neutral, slight short lean
+  //   Greed        (56-75):  60-70  — overextension = prime short setup
+  //   Extreme Greed(76-100): 65-75  — blow-off top conditions, strong short support
+  function sentimentToShortSupport(s) {
+    if (s <= 25)  return 45 + Math.round(s / 25 * 10);          // 45-55 (more fear = less short edge, already sold)
+    if (s <= 45)  return 55 + Math.round((s - 25) / 20 * 10);   // 55-65 (fear building = shorts opening)
+    if (s <= 55)  return 50 + Math.round((s - 45) / 10 *  5);   // 50-55
+    if (s <= 75)  return 60 + Math.round((s - 55) / 20 * 10);   // 60-70 (greed = extended, short it)
+    return        65 + Math.round((s - 75) / 25 * 10);           // 65-75 (extreme greed = blow-off, prime short)
   }
 
   if (direction === 'long') {
@@ -169,13 +189,13 @@ function normalizeScores(r1, direction) {
     };
   }
 
-  // short or close: invert the curve — extreme fear opposes shorts, extreme greed supports them
+  // short or close: use dedicated short curve — NOT a simple inversion
   return {
     bull:      100 - r1.bull.score,
     bear:      r1.bear.score,
     quant:     quantScore,
     macro:     macroScore,
-    sentiment: 100 - sentimentToLongSupport(r1.sentiment.score),
+    sentiment: sentimentToShortSupport(r1.sentiment.score),
   };
 }
 
@@ -237,13 +257,14 @@ function classifyVote(normalizedScores, weights) {
 function computeVetoReasons(r1, normalizedScores) {
   const reasons = [];
 
-  // Condition 1: macro flag active AND bear conviction > 60
-  // Rationale: macro risk flag combined with a strongly bearish committee member
-  // represents compounding risk — the expected loss exceeds acceptable bounds.
-  if (r1.macro.flag && r1.bear.score > 60) {
+  // Condition 1: macro flag active AND bear conviction > 60, but ONLY for longs.
+  // For shorts, a macro flag + high bear score is a confirmation signal, not a veto.
+  // Vetoing shorts during macro risk events defeats the purpose of having a Bear agent.
+  const direction = r1.signal?.direction ?? 'long';
+  if (r1.macro.flag && r1.bear.score > 60 && direction !== 'short') {
     reasons.push(
       `Macro flag active with strong Bear conviction (Bear score ${r1.bear.score}/100 > 60) — ` +
-      `combined macro and bear risk exceeds entry threshold`,
+      `combined macro and bear risk exceeds long entry threshold`,
     );
   }
 
