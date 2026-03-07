@@ -21,6 +21,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const { MODELS, TOKEN_BUDGETS, AGENT_OUTPUT_SCHEMA } = require('../config/models.js');
 const { buildSynthesisPrompt } = require('./prompt.js');
+const { trackCall } = require('../lib/cost-tracker');
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -323,6 +324,7 @@ async function callLLM(system, user) {
     system,
     messages: [{ role: 'user', content: user }],
   });
+  await trackCall({ agent: 'orchestrator', model: MODELS.orchestrator, deliberationId: null, usage: response.usage });
 
   const raw = response.content[0]?.text ?? '';
 

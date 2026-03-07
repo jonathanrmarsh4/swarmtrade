@@ -15,6 +15,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { AGENT_OUTPUT_SCHEMA } = require('../config/models.js');
 const { TRADING_PROFILES }  = require('../config/trading-profiles.js');
+const { checkBudget }        = require('../lib/cost-tracker.js');
 const { calculateLevels, DEFAULT_SL_TP_CONFIG } = require('../config/sl-tp-config.js');
 
 const bull      = require('../agents/bull/index.js');

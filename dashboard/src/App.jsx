@@ -8,7 +8,8 @@ import Scanner from './components/Scanner';
 import Analyst from './components/Analyst';
 import WarRoom from './components/WarRoom';
 import Settings from './components/Settings';
-import { BarChart, Brain, Radio, Bot, ScanLine, Zap, Settings as SettingsIcon } from 'lucide-react';
+import CostMonitor from './components/CostMonitor';
+import { BarChart, Brain, Radio, Bot, ScanLine, Zap, Settings as SettingsIcon, DollarSign } from 'lucide-react';
 import { TimezoneProvider, useTimezone } from './lib/timezone';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
@@ -19,6 +20,7 @@ const TABS = [
   { id: 'signals',       label: 'Signals',       Icon: Radio         },
   { id: 'agents',        label: 'Agents',        Icon: Bot           },
   { id: 'scanner',       label: 'Scanner',       Icon: ScanLine      },
+  { id: 'costs',         label: 'Costs',         Icon: DollarSign    },
   { id: 'warroom',       label: 'War Room',      Icon: Zap           },
   { id: 'settings',      label: 'Settings',      Icon: SettingsIcon  },
 ];
@@ -193,6 +195,7 @@ export default function App() {
         {activeTab === 'agents'        && <AgentReputation />}
         {activeTab === 'scanner'       && <Scanner />}
         {activeTab === 'warroom'       && <WarRoom />}
+        {activeTab === 'costs'         && <CostMonitor />}
         {activeTab === 'settings'      && <Settings />}
       </main>
       {/* Floating analyst — always mounted, appears over everything */}

@@ -21,6 +21,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const { MODELS, TOKEN_BUDGETS } = require('../../config/models.js');
 const { buildCrowdThermometerPrompt } = require('./prompt.js');
+const { trackCall } = require('../../lib/cost-tracker');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -188,6 +189,7 @@ async function poll() {
       system,
       messages: [{ role: 'user', content: user }],
     });
+    await trackCall({ agent: 'crowd-thermometer', model: MODELS.sentiment, deliberationId: null, usage: response.usage });
     const raw   = response.content[0]?.text ?? '';
     const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
     const parsed = JSON.parse(clean);

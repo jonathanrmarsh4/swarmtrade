@@ -3,6 +3,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { MODELS, TOKEN_BUDGETS, AGENT_OUTPUT_SCHEMA } = require('../../config/models.js');
 const { buildRound1Prompt, buildRound2Prompt } = require('./prompt.js');
+const { trackCall } = require('../../lib/cost-tracker');
 
 // ── Client ────────────────────────────────────────────────────────────────────
 // Instantiated once at module load. API key sourced from Railway env only.
@@ -21,6 +22,7 @@ async function callLLMWithRetry(system, user, model, maxTokens) {
         system,
         messages: [{ role: 'user', content: user }],
       });
+      await trackCall({ agent: 'bear', model, deliberationId: null, usage: response.usage });
       return response.content[0]?.text ?? '';
     } catch (err) {
       lastErr = err;

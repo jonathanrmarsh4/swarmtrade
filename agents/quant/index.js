@@ -16,6 +16,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { MODELS, TOKEN_BUDGETS, AGENT_OUTPUT_SCHEMA } = require('../../config/models.js');
 const { buildQuantPrompt, buildSentimentCrossCheckPrompt } = require('./prompt.js');
+const { trackCall } = require('../../lib/cost-tracker');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -32,6 +33,7 @@ async function callLLMWithRetry(system, user, model, maxTokens) {
         system,
         messages: [{ role: 'user', content: user }],
       });
+      await trackCall({ agent: 'quant', model, deliberationId: null, usage: response.usage });
       return response.content[0]?.text ?? '';
     } catch (err) {
       lastErr = err;
@@ -174,6 +176,7 @@ async function formatOutput(metrics, signalData) {
     max_tokens: TOKEN_BUDGETS.quant,
     messages:   [{ role: 'user', content: prompt }],
   });
+  await trackCall({ agent: 'quant', model: MODELS.quant, deliberationId: null, usage: response.usage });
 
   const rawText = response.content[0].text.trim();
 
@@ -266,6 +269,7 @@ async function crossCheckSentiment(quantOutput, sentimentScore) {
       max_tokens: TOKEN_BUDGETS.quant,   // ← from config/models.js only
       messages:   [{ role: 'user', content: prompt }],
     });
+  await trackCall({ agent: 'quant', model: MODELS.quant, deliberationId: null, usage: response.usage });
   } catch (err) {
     throw new Error(`[quant] crossCheckSentiment — Anthropic API call failed: ${err.message}`);
   }

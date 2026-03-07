@@ -21,6 +21,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const { MODELS, TOKEN_BUDGETS } = require('../../config/models.js');
 const { buildNewsAssessmentPrompt } = require('./prompt.js');
+const { trackCall } = require('../../lib/cost-tracker');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ async function assessHeadline(headline, source) {
     system,
     messages: [{ role: 'user', content: user }],
   });
+  await trackCall({ agent: 'news-sentinel', model: MODELS.sentiment, deliberationId: null, usage: response.usage });
 
   const raw = response.content[0]?.text ?? '';
 

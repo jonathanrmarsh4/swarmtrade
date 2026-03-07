@@ -14,6 +14,7 @@ const cron             = require('node-cron');
 const { createClient } = require('@supabase/supabase-js');
 const Anthropic        = require('@anthropic-ai/sdk');
 const { MODELS, TOKEN_BUDGETS } = require('../config/models.js');
+const { trackCall } = require('../lib/cost-tracker');
 
 // ── Supabase client ───────────────────────────────────────────────────────────
 
@@ -231,6 +232,7 @@ async function runWeeklyReflection() {
       max_tokens: TOKEN_BUDGETS.orchestrator,
       messages:   [{ role: 'user', content: prompt }],
     });
+    await trackCall({ agent: 'reflection', model: response.model ?? 'claude-sonnet-4-5', deliberationId: null, usage: response.usage });
 
     sonnetAnalysis = response.content[0]?.text ?? '';
   } catch (err) {

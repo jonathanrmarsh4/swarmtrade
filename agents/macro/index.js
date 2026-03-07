@@ -17,6 +17,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { MODELS, TOKEN_BUDGETS, AGENT_OUTPUT_SCHEMA } = require('../../config/models.js');
 const { buildMacroPrompt } = require('./prompt.js');
+const { trackCall } = require('../../lib/cost-tracker');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -33,6 +34,7 @@ async function callLLMWithRetry(system, user, model, maxTokens) {
         system,
         messages: [{ role: 'user', content: user }],
       });
+      await trackCall({ agent: 'macro', model, deliberationId: null, usage: response.usage });
       return response.content[0]?.text ?? '';
     } catch (err) {
       lastErr = err;
