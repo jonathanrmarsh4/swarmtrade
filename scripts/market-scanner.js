@@ -227,59 +227,72 @@ class ProfileState {
     const candidate = this.watchlist.get(symbol);
     if (!candidate) return;
 
-    let windowTypes = this.sigWindows.has(symbol)
-      ? new Set(this.sigWindows.get(symbol).filter(e => e.timestamp > Date.now() - this.profile.wsEscalationMs).map(e => e.type))
-      : new Set();
+    // ── What the WebSocket is actually for ──────────────────────────────────
+    // The background scan already confirmed this asset has RSI/MACD/volume
+    // conviction (score >= 1). The WebSocket's job is NOT to re-prove that
+    // conviction from scratch — it's to detect that something is HAPPENING
+    // RIGHT NOW that warrants waking up the swarm.
+    //
+    // Three independent triggers, any ONE is enough to escalate:
+    //
+    //   A. Volume surge: current 1m candle volume > 3x the 10-candle average.
+    //      Sudden volume is the most reliable real-time signal that an asset
+    //      is being acted on. Threshold is higher than scan (3x vs profile
+    //      multiplier) because 1m candles are noisier than hourly.
+    //
+    //   B. Price move: price has moved > 0.8% from the scan-time price in
+    //      the signal direction (up for long candidates, down for short).
+    //      This catches momentum continuation without needing S/R levels.
+    //
+    //   C. RSI confirmation (on candle close, after 15-candle warmup):
+    //      RSI crosses back INTO the extreme zone after a brief pullback,
+    //      or RSI is in extreme zone on the first warmed-up close.
+    //      This is a secondary trigger — slower but more reliable.
+    // ────────────────────────────────────────────────────────────────────────
 
-    // A: RSI threshold (on candle close only)
+    const triggers = [];
+
+    // A: Volume surge on any tick (not just close)
+    if (buf.length >= 6) {
+      const avg10 = buf.slice(-Math.min(buf.length, 11), -1).map(c => c.volume).reduce((a, b) => a + b, 0)
+                  / Math.min(buf.length - 1, 10);
+      const ratio = avg10 > 0 ? kline.volume / avg10 : 0;
+      if (ratio >= 3.0) {
+        triggers.push(`volume_surge_${ratio.toFixed(1)}x`);
+        console.log(`[ws:${this.profile.label}] ${symbol} volume surge ${ratio.toFixed(1)}x avg`);
+      }
+    }
+
+    // B: Price move from scan-time entry price
+    if (candidate.price > 0) {
+      const movePct = ((kline.close - candidate.price) / candidate.price) * 100;
+      const threshold = 0.8; // 0.8% move in signal direction
+      const isLong  = candidate.direction === 'long';
+      if ((isLong && movePct >= threshold) || (!isLong && movePct <= -threshold)) {
+        triggers.push(`price_move_${movePct.toFixed(2)}pct`);
+        console.log(`[ws:${this.profile.label}] ${symbol} price moved ${movePct.toFixed(2)}% from scan (${candidate.direction})`);
+      }
+    }
+
+    // C: RSI confirmation on candle close (after 15-candle warmup)
     if (kline.isFinal && buf.length >= 15) {
       const liveRSI = calcRSI(buf);
-      if (liveRSI < this.profile.rsiOversold) {
-        console.log(`[ws:${this.profile.label}] ${symbol} RSI oversold: ${liveRSI.toFixed(1)}`);
-        windowTypes = this.recordSignal(symbol, 'rsi_oversold');
-      } else if (liveRSI > this.profile.rsiOverbought) {
-        console.log(`[ws:${this.profile.label}] ${symbol} RSI overbought: ${liveRSI.toFixed(1)}`);
-        windowTypes = this.recordSignal(symbol, 'rsi_overbought');
+      const inOversold   = liveRSI < this.profile.rsiOversold;
+      const inOverbought = liveRSI > this.profile.rsiOverbought;
+      if ((candidate.direction === 'long'  && inOversold) ||
+          (candidate.direction === 'short' && inOverbought)) {
+        triggers.push(`rsi_confirm_${liveRSI.toFixed(0)}`);
+        console.log(`[ws:${this.profile.label}] ${symbol} RSI confirmation: ${liveRSI.toFixed(1)} direction=${candidate.direction}`);
       }
     }
 
-    // B: Volume spike (profile-specific multiplier)
-    if (buf.length >= 6) {
-      const avgVol = buf.slice(-6,-1).map(c => c.volume).reduce((a,b)=>a+b,0) / 5;
-      if (avgVol > 0 && kline.volume > avgVol * this.profile.volumeSpikeMult) {
-        console.log(`[ws:${this.profile.label}] ${symbol} volume spike: ${(kline.volume/avgVol).toFixed(1)}x`);
-        windowTypes = this.recordSignal(symbol, 'volume_spike');
-      }
-    }
+    if (triggers.length === 0) return;
 
-    // C: Price breakout vs scan-time S/R
-    if (candidate.support && candidate.resistance) {
-      if (kline.close > candidate.resistance) {
-        console.log(`[ws:${this.profile.label}] ${symbol} broke resistance $${candidate.resistance.toFixed(4)}`);
-        windowTypes = this.recordSignal(symbol, 'breakout_high');
-      } else if (kline.close < candidate.support) {
-        console.log(`[ws:${this.profile.label}] ${symbol} broke support $${candidate.support.toFixed(4)}`);
-        windowTypes = this.recordSignal(symbol, 'breakout_low');
-      }
-    }
-
-    // Standard escalation: 2+ distinct live conditions within window
-    if (windowTypes.size >= SIGNALS_REQUIRED && this.canEscalate(symbol)) {
-      this._escalate(symbol, windowTypes, kline.close).catch(e =>
-        console.error(`[ws:${this.profile.label}] Escalation error ${symbol}: ${e.message}`)
-      );
-      return;
-    }
-
-    // Fast-track escalation: scan already gave high conviction — one live condition confirms
-    // Score ≥ 3 means RSI + volume spike + MACD all aligned at scan time.
-    // A single live WebSocket confirmation (any type) is sufficient to escalate.
-    if (candidate && candidate.score >= 3 && windowTypes.size >= 1 && this.canEscalate(symbol)) {
-      console.log(`[ws:${this.profile.label}] ${symbol} fast-track escalation — scan score=${candidate.score} + live condition`);
-      this._escalate(symbol, windowTypes, kline.close).catch(e =>
-        console.error(`[ws:${this.profile.label}] Escalation error ${symbol}: ${e.message}`)
-      );
-    }
+    // Any single trigger is enough — the scan already provided the base conviction.
+    // Record and escalate.
+    this._escalate(symbol, new Set(triggers), kline.close).catch(e =>
+      console.error(`[ws:${this.profile.label}] Escalation error ${symbol}: ${e.message}`)
+    );
   }
 
   async _escalate(symbol, triggerTypes, livePrice) {
@@ -393,18 +406,16 @@ async function runBackgroundScan() {
     state.updateWatchlist(results);
     state.syncWS();
 
-    // Direct escalation for exceptional scan signals:
-    // score≥3 with volume spike ≥10× is strong enough to trigger without waiting for WebSocket.
-    // This catches big moves that happen between scan cycles.
-    for (const r of results.slice(0, 10)) {
-      if (r.score >= 3 && r.volumeRatio >= 10 && state.canEscalate(r.symbol)) {
-        const candidate = state.watchlist.get(r.symbol);
-        if (candidate) {
-          console.log(`[scanner:${profile.label}] ⚡ Direct escalation — ${r.symbol} score=${r.score} vol=${r.volumeRatio.toFixed(1)}x`);
-          state._escalate(r.symbol, new Set(['scan_high_conviction']), r.price).catch(e =>
-            console.error(`[scanner:${profile.label}] Direct escalation error: ${e.message}`)
-          );
-        }
+    // Direct scan escalation — score >= 2 means 2+ independent indicators fired.
+    // Fire swarm immediately without waiting for WebSocket confirmation.
+    // Cooldown (30 min) prevents re-firing on the next scan cycle for the same pair.
+    for (const r of results.slice(0, 20)) {
+      if (r.score >= 2 && state.canEscalate(r.symbol)) {
+        const triggerLabels = r.signals.slice(0, 2).map(s => s.replace(/[\s()]/g, '_').toLowerCase());
+        console.log(`[scanner:${profile.label}] ⚡ Direct escalation — ${r.symbol} score=${r.score} RSI=${r.rsi} vol=${r.volumeRatio.toFixed(1)}x`);
+        state._escalate(r.symbol, new Set(['scan_conviction', `score_${r.score}`, ...triggerLabels]), r.price).catch(e =>
+          console.error(`[scanner:${profile.label}] Direct escalation error: ${e.message}`)
+        );
       }
     }
 
