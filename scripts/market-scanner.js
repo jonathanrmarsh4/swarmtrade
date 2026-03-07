@@ -136,26 +136,37 @@ function scoreAsset(symbol, price, candles, profile) {
 // ── Binance REST helpers ──────────────────────────────────────────────────────
 
 // ── Focused trading universe ──────────────────────────────────────────────────
-// Fixed list of liquid, well-traded USDT pairs.
-// Criteria: high Binance volume, tight spreads, available on testnet,
-// meaningful volatility across all 4 timeframes.
-// Keeping this small (10 pairs) means 4 profiles × 10 pairs × 300ms = 12s per scan.
-const TRADING_UNIVERSE = [
-  'BTCUSDT',   // Bitcoin       — deepest liquidity, all timeframes
-  'ETHUSDT',   // Ethereum      — second deepest, high volatility
-  'SOLUSDT',   // Solana        — strong vol, active derivatives
-  'BNBUSDT',   // BNB           — Binance native, very liquid
-  'XRPUSDT',   // XRP           — high volume, momentum-prone
-  'DOGEUSDT',  // Doge          — retail-driven, intraday spikes
-  'ADAUSDT',   // Cardano       — steady volume, trend-friendly
-  'AVAXUSDT',  // Avalanche     — high beta, good for swing
-  'LINKUSDT',  // Chainlink     — reliable volume, mid-cap leader
-  'MATICUSDT', // Polygon       — active, good intraday range
+// Default list — used as fallback if Supabase system_config is unavailable.
+// Live value is loaded from system_config at scan time and editable via the
+// Settings page in the dashboard without redeploying.
+const TRADING_UNIVERSE_DEFAULT = [
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT',
+  'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'MATICUSDT',
 ];
 
+async function loadTradingUniverse() {
+  try {
+    const { data, error } = await getSupabase()
+      .from('system_config')
+      .select('value')
+      .eq('key', 'trading_universe')
+      .maybeSingle();
+    if (error || !data) {
+      console.warn('[scanner] Could not load trading_universe from DB — using defaults');
+      return TRADING_UNIVERSE_DEFAULT;
+    }
+    const universe = Array.isArray(data.value) ? data.value : JSON.parse(data.value);
+    console.log('[scanner] Trading universe loaded from DB:', universe.join(', '));
+    return universe;
+  } catch (err) {
+    console.warn('[scanner] loadTradingUniverse error — using defaults:', err.message);
+    return TRADING_UNIVERSE_DEFAULT;
+  }
+}
+
 async function fetchTopPairs() {
-  // Fetch live prices for our focused universe in one batch request
-  const symbols = JSON.stringify(TRADING_UNIVERSE);
+  const universe = await loadTradingUniverse();
+  const symbols = JSON.stringify(universe);
   const url = 'https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(symbols);
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error('Binance ticker HTTP ' + res.status);
@@ -392,9 +403,12 @@ async function runBackgroundScan() {
   console.log('════════════════════════════════════════════════');
 
   // Fetch top 100 pairs once (shared across all profiles)
+  // Load trading universe from DB (Settings page can update without redeploy)
+  const universe = await loadTradingUniverse();
+
   let pairs;
   try {
-    pairs = await fetchTopPairs();
+    pairs = await fetchTopPairs(universe);
   } catch (err) {
     console.error(`[scanner] Fetch failed: ${err.message}`); return;
   }
