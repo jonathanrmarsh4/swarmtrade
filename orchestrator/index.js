@@ -252,14 +252,16 @@ async function runRound1(signalData, portfolioState) {
   // value is drawn from the same portfolioState source.
 
   const bullMarketData = {
-    asset:        signalData.asset,
-    currentPrice: marketData.currentPrice,
-    rsi:          marketData.rsi,
-    macdSignal:   marketData.macdSignal,
-    volume:       marketData.volume,
-    direction:    signalData.direction,
-    signalType:   signalData.signal_type,
-    timeframe:    signalData.timeframe,
+    asset:           signalData.asset,
+    currentPrice:    marketData.currentPrice,
+    rsi:             marketData.rsi,
+    macdSignal:      marketData.macdSignal,
+    volume:          marketData.volume,
+    direction:       signalData.direction,
+    signalType:      signalData.signal_type,
+    timeframe:       signalData.timeframe,
+    tradingMode:     marketData.tradingMode,
+    holdDescription: marketData.holdDescription,
   };
 
   const bearMarketData = {
@@ -381,6 +383,7 @@ async function runRound1(signalData, portfolioState) {
     asset:             signalData.asset,
     direction:         signalData.direction,
     signal_type:       signalData.signal_type ?? null,
+    trading_mode:      marketData.tradingMode ?? 'dayTrade',
     bull_score:        validated.bull.score,
     bull_thesis:       validated.bull.thesis,
     bear_score:        validated.bear.score,
@@ -535,11 +538,15 @@ function extractMarketData(signal) {
   // Normalise MACD signal field — different Pine Script authors use different keys
   const macdSignal = p.macd_signal ?? p.macd ?? 'neutral';
 
+  // Trading mode from scanner payload — falls back to 'dayTrade' for TradingView signals
+  const tradingMode    = p.trading_mode ?? 'dayTrade';
+  const profile        = TRADING_PROFILES[tradingMode] ?? TRADING_PROFILES.dayTrade;
+
   return {
     currentPrice,
     rsi:                   p.rsi                   ?? 50,
     macdSignal,
-    macd:                  macdSignal,   // alias so Bear Round 2 prompt can read it directly
+    macd:                  macdSignal,
     volume:                p.volume_ratio ?? p.volume ?? 1.0,
     fundingRate:           p.funding_rate           ?? 0,
     fearGreedIndex:        p.fear_greed             ?? 50,
@@ -547,6 +554,8 @@ function extractMarketData(signal) {
     atr,
     stopLoss:              p.stop_loss              ?? null,
     takeProfit:            p.take_profit            ?? null,
+    tradingMode,
+    holdDescription:       profile.holdDescription,
   };
 }
 

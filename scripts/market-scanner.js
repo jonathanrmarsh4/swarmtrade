@@ -1,56 +1,40 @@
 'use strict';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Market Scanner v2 — Hybrid Watchlist + WebSocket Monitor
+// Market Scanner v3 — Multi-Profile Hybrid Watchlist + WebSocket Monitor
 //
-//   STAGE 1 — BACKGROUND SCAN (every 10 minutes)
-//     Fetches top 100 USDT pairs by volume. Scores each with 4 technical
-//     filters on 1h candles. Populates watchlist of top 5 candidates.
-//     Pairs stay until they score below threshold on a rescan.
+// Runs 4 independent scanning pipelines simultaneously, one per trading profile:
+//   Intraday  — 15m candles, 2-min escalation window
+//   Day Trade — 1h candles,  5-min escalation window
+//   Swing     — 4h candles, 10-min escalation window
+//   Position  — 1d candles, 30-min escalation window
 //
-//   STAGE 2 — WEBSOCKET MONITOR (continuous, live 1m klines)
-//     Opens Binance WebSocket streams for watchlist pairs (max 5).
-//     Detects 3 live conditions per pair:
-//       A. RSI crosses 30/70 on closing 1m candle
-//       B. Volume spike: current candle > 2x recent average
-//       C. Price breaks above resistance or below support
-//     Tracks conditions in a rolling 5-minute signal window.
-//
-//   STAGE 3 — SMART ESCALATION (event-driven, no polling)
-//     Triggers when ANY 2 distinct conditions fire within 5-min window.
-//     30-minute cooldown per pair after escalation.
-//     Sends full technical context to swarm deliberation.
+// Each profile maintains its own watchlist (max 5 pairs) and WebSocket streams.
+// Escalation requires 2 distinct live conditions within the profile's window.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const cron             = require('node-cron');
 const WebSocket        = require('ws');
 const { createClient } = require('@supabase/supabase-js');
-const { runDeliberation } = require('../orchestrator/index.js');
-const { executeTrade }    = require('../octobot/index.js');
+const { runDeliberation }          = require('../orchestrator/index.js');
+const { executeTrade }             = require('../octobot/index.js');
+const { TRADING_PROFILES, ALL_PROFILE_IDS } = require('../config/trading-profiles.js');
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// ── Global config ─────────────────────────────────────────────────────────────
 
-const TOP_N_ASSETS            = 100;
-const CANDLE_LIMIT            = 50;
-const MIN_SIGNAL_SCORE        = 1;
-const MAX_WATCHLIST_SIZE      = 5;
-const SCAN_INTERVAL_MS        = 10 * 60 * 1000;   // 10 minutes
-const ESCALATION_COOLDOWN_MS  = 30 * 60 * 1000;   // 30 min between escalations per pair
-const TRIGGER_WINDOW_MS       = 5  * 60 * 1000;   // conditions must cluster within 5 min
-const SIGNALS_REQUIRED        = 2;                 // distinct conditions needed to escalate
-const WS_RECONNECT_DELAY_MS   = 5_000;
-
-const RSI_OVERSOLD            = 30;
-const RSI_OVERBOUGHT          = 70;
-const LIVE_VOLUME_SPIKE_MULT  = 2.0;
-const BINANCE_WS_BASE         = 'wss://stream.binance.com:9443/ws';
+const TOP_N_ASSETS           = 100;
+const MAX_WATCHLIST_SIZE     = 5;
+const SCAN_INTERVAL_MS       = 10 * 60 * 1000;   // 10 min — all profiles scan together
+const ESCALATION_COOLDOWN_MS = 30 * 60 * 1000;   // 30 min per pair per profile
+const SIGNALS_REQUIRED       = 2;
+const WS_RECONNECT_DELAY_MS  = 5_000;
+const BINANCE_WS_BASE        = 'wss://stream.binance.com:9443/ws';
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 
-let supabase = null;
+let _supabase = null;
 function getSupabase() {
-  if (!supabase) supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-  return supabase;
+  if (!_supabase) _supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+  return _supabase;
 }
 
 // ── Technical indicators ──────────────────────────────────────────────────────
@@ -74,7 +58,7 @@ function calcRSI(candles, period = 14) {
 }
 
 function calcMACD(candles) {
-  if (candles.length < 26) return { crossover: false, crossunder: false, macdLine: 0, signalLine: 0 };
+  if (candles.length < 26) return { crossover: false, crossunder: false };
   const closes = candles.map(c => c.close);
   const k12 = 2/13, k26 = 2/27, k9 = 2/10;
   let e12 = closes[0], e26 = closes[0];
@@ -91,8 +75,6 @@ function calcMACD(candles) {
   return {
     crossover:  macdSeries[n-1] < sigSeries[n-1] && macdSeries[n] > sigSeries[n],
     crossunder: macdSeries[n-1] > sigSeries[n-1] && macdSeries[n] < sigSeries[n],
-    macdLine:   macdSeries[n],
-    signalLine: sigSeries[n],
   };
 }
 
@@ -117,14 +99,12 @@ function calcVolumeRatio(candles) {
 }
 
 function calcSupportResistance(candles) {
-  const window = candles.slice(-20);
-  return {
-    resistance: Math.max(...window.map(c => c.high)),
-    support:    Math.min(...window.map(c => c.low)),
-  };
+  const w = candles.slice(-20);
+  return { resistance: Math.max(...w.map(c => c.high)), support: Math.min(...w.map(c => c.low)) };
 }
 
-function scoreAsset(symbol, price, candles) {
+// Score asset against a specific profile's thresholds
+function scoreAsset(symbol, price, candles, profile) {
   const rsi         = calcRSI(candles);
   const macd        = calcMACD(candles);
   const volumeRatio = calcVolumeRatio(candles);
@@ -134,20 +114,20 @@ function scoreAsset(symbol, price, candles) {
   let score = 0;
   const bullSignals = [], bearSignals = [], neutralSignals = [];
 
-  if (rsi < RSI_OVERSOLD)    { score++; bullSignals.push(`RSI oversold (${rsi.toFixed(1)})`); }
-  if (rsi > RSI_OVERBOUGHT)  { score++; bearSignals.push(`RSI overbought (${rsi.toFixed(1)})`); }
-  if (volumeRatio >= 2.0)    { score++; neutralSignals.push(`Volume spike ${volumeRatio.toFixed(1)}x`); }
-  if (macd.crossover)        { score++; bullSignals.push('MACD crossover (bullish)'); }
-  if (macd.crossunder)       { score++; bearSignals.push('MACD crossunder (bearish)'); }
+  if (rsi < profile.rsiOversold)    { score++; bullSignals.push(`RSI oversold (${rsi.toFixed(1)})`); }
+  if (rsi > profile.rsiOverbought)  { score++; bearSignals.push(`RSI overbought (${rsi.toFixed(1)})`); }
+  if (volumeRatio >= profile.volumeSpikeMult) { score++; neutralSignals.push(`Volume spike ${volumeRatio.toFixed(1)}x`); }
+  if (macd.crossover)               { score++; bullSignals.push('MACD crossover (bullish)'); }
+  if (macd.crossunder)              { score++; bearSignals.push('MACD crossunder (bearish)'); }
 
   const direction = bullSignals.length >= bearSignals.length ? 'long' : 'short';
 
   return {
     symbol, price, score, direction,
-    rsi:         parseFloat(rsi.toFixed(1)),
+    rsi: parseFloat(rsi.toFixed(1)),
     volumeRatio: parseFloat(volumeRatio.toFixed(2)),
-    macdCross:   macd.crossover ? 'bullish' : macd.crossunder ? 'bearish' : null,
-    atr:         atr ? parseFloat(atr.toFixed(8)) : null,
+    macdCross: macd.crossover ? 'bullish' : macd.crossunder ? 'bearish' : null,
+    atr: atr ? parseFloat(atr.toFixed(8)) : null,
     support, resistance,
     signals: [...bullSignals, ...bearSignals, ...neutralSignals],
   };
@@ -163,11 +143,11 @@ async function fetchTopPairs() {
     .filter(t => t.symbol.endsWith('USDT') && parseFloat(t.quoteVolume) > 0)
     .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
     .slice(0, TOP_N_ASSETS)
-    .map(t => ({ symbol: t.symbol, price: parseFloat(t.lastPrice), volume24h: parseFloat(t.quoteVolume) }));
+    .map(t => ({ symbol: t.symbol, price: parseFloat(t.lastPrice) }));
 }
 
-async function fetchCandles(symbol) {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=${CANDLE_LIMIT}`;
+async function fetchCandles(symbol, interval, limit) {
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`Candles HTTP ${res.status}`);
   return (await res.json()).map(k => ({
@@ -176,180 +156,50 @@ async function fetchCandles(symbol) {
   }));
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// ── Per-profile state ─────────────────────────────────────────────────────────
+// Each profile gets its own isolated watchlist, signal windows, and cooldowns.
 
-const watchlist     = new Map(); // symbol -> candidate
-const signalWindows = new Map(); // symbol -> [{type, timestamp}]
-const lastEscalation = new Map(); // symbol -> timestamp
-
-function recordLiveSignal(symbol, type) {
-  const now = Date.now();
-  if (!signalWindows.has(symbol)) signalWindows.set(symbol, []);
-  const events = signalWindows.get(symbol);
-  events.push({ type, timestamp: now });
-  const cutoff = now - TRIGGER_WINDOW_MS;
-  const fresh  = events.filter(e => e.timestamp > cutoff);
-  signalWindows.set(symbol, fresh);
-  return new Set(fresh.map(e => e.type));
-}
-
-function canEscalate(symbol) {
-  return (Date.now() - (lastEscalation.get(symbol) ?? 0)) > ESCALATION_COOLDOWN_MS;
-}
-
-function markEscalated(symbol) {
-  lastEscalation.set(symbol, Date.now());
-  signalWindows.delete(symbol);
-}
-
-// ── Supabase writes ───────────────────────────────────────────────────────────
-
-async function writeSignalToSupabase(symbol, candidate, triggerTypes, livePrice) {
-  const macdSignal = candidate.macdCross === 'bullish' ? 'bullish_crossover'
-                   : candidate.macdCross === 'bearish' ? 'bearish_crossover' : 'neutral';
-
-  const { data, error } = await getSupabase().from('signals').insert({
-    asset:       symbol,
-    direction:   candidate.direction,
-    timeframe:   '1h',
-    signal_type: 'websocket_trigger',
-    raw_payload: {
-      asset:         symbol,
-      direction:     candidate.direction,
-      price:         livePrice,
-      rsi:           candidate.rsi,
-      volume_ratio:  candidate.volumeRatio,
-      macd_signal:   macdSignal,
-      atr:           candidate.atr,
-      support:       candidate.support,
-      resistance:    candidate.resistance,
-      signals:       candidate.signals,
-      trigger_types: [...triggerTypes],
-      signal_type:   'websocket_trigger',
-    },
-  }).select('id').single();
-
-  if (error) throw error;
-  return data.id;
-}
-
-async function persistScanResults(scanId, results) {
-  const rows = results.map(r => ({
-    scan_id: scanId, symbol: r.symbol, price: r.price, score: r.score,
-    direction: r.direction, rsi: r.rsi, volume_ratio: r.volumeRatio,
-    macd_cross: r.macdCross, signals: r.signals,
-    escalated: watchlist.has(r.symbol), scanned_at: new Date().toISOString(),
-  }));
-  for (let i = 0; i < rows.length; i += 20) {
-    const { error } = await getSupabase().from('scanner_results').insert(rows.slice(i, i+20));
-    if (error) console.warn(`[scanner] Persist error: ${error.message}`);
-  }
-}
-
-async function persistWatchlist() {
-  const expiry = new Date(Date.now() + 24*60*60*1000).toISOString();
-  for (const [symbol, c] of watchlist.entries()) {
-    const { error } = await getSupabase().from('watchlist_active').upsert({
-      symbol, score: c.score, reasons: c.signals, price: c.price,
-      direction: c.direction, rsi: c.rsi, volume_ratio: c.volumeRatio,
-      expires_at: expiry, created_at: new Date().toISOString(),
-    }, { onConflict: 'symbol' });
-    if (error) console.warn(`[scanner] Watchlist upsert error ${symbol}: ${error.message}`);
-  }
-}
-
-// ── Escalation ────────────────────────────────────────────────────────────────
-
-async function escalateToSwarm(symbol, triggerTypes, livePrice) {
-  const candidate = watchlist.get(symbol);
-  if (!candidate) return;
-
-  console.log(`\n[ws-monitor] ⚡ ESCALATING ${symbol} → swarm`);
-  console.log(`[ws-monitor]   Triggers : [${[...triggerTypes].join(', ')}]`);
-  console.log(`[ws-monitor]   Price    : $${livePrice}`);
-  console.log(`[ws-monitor]   Scan RSI : ${candidate.rsi}  Vol: ${candidate.volumeRatio}x  MACD: ${candidate.macdCross}`);
-
-  markEscalated(symbol);
-
-  try {
-    const signalId = await writeSignalToSupabase(symbol, candidate, triggerTypes, livePrice);
-    const result   = await runDeliberation(signalId);
-    console.log(`[ws-monitor] Deliberation complete — ${symbol} decision=${result.decision} elapsed=${result.elapsedMs}ms`);
-    if (result.tradeInstruction) await executeTrade(result.tradeInstruction);
-  } catch (err) {
-    console.error(`[ws-monitor] Escalation failed for ${symbol}: ${err.message}`);
-  }
-}
-
-// ── WebSocket Manager ─────────────────────────────────────────────────────────
-
-class WebSocketManager {
-  constructor() { this.connections = new Map(); }
-
-  _updateBuffer(buffer, kline) {
-    if (!buffer.length || kline.time !== buffer[buffer.length-1].time) buffer.push(kline);
-    else buffer[buffer.length-1] = kline;
-    if (buffer.length > 30) buffer.shift();
+class ProfileState {
+  constructor(profileId) {
+    this.profileId    = profileId;
+    this.profile      = TRADING_PROFILES[profileId];
+    this.watchlist    = new Map();   // symbol → candidate
+    this.sigWindows   = new Map();   // symbol → [{type, timestamp}]
+    this.cooldowns    = new Map();   // symbol → last escalation timestamp
+    this.wsConns      = new Map();   // symbol → WebSocket
   }
 
-  _check(symbol, kline, buffer) {
-    if (!canEscalate(symbol)) return;
-    const candidate = watchlist.get(symbol);
-    if (!candidate) return;
-
-    let windowTypes = signalWindows.get(symbol) ? new Set(signalWindows.get(symbol).filter(e => e.timestamp > Date.now() - TRIGGER_WINDOW_MS).map(e => e.type)) : new Set();
-
-    // A: RSI (only on closed candles)
-    if (kline.isFinal && buffer.length >= 15) {
-      const liveRSI = calcRSI(buffer);
-      if (liveRSI < RSI_OVERSOLD) {
-        console.log(`[ws-monitor] ${symbol} live RSI oversold: ${liveRSI.toFixed(1)}`);
-        windowTypes = recordLiveSignal(symbol, 'rsi_oversold');
-      } else if (liveRSI > RSI_OVERBOUGHT) {
-        console.log(`[ws-monitor] ${symbol} live RSI overbought: ${liveRSI.toFixed(1)}`);
-        windowTypes = recordLiveSignal(symbol, 'rsi_overbought');
-      }
-    }
-
-    // B: Volume spike
-    if (buffer.length >= 6) {
-      const avgVol = buffer.slice(-6,-1).map(c => c.volume).reduce((a,b)=>a+b,0) / 5;
-      if (avgVol > 0 && kline.volume > avgVol * LIVE_VOLUME_SPIKE_MULT) {
-        console.log(`[ws-monitor] ${symbol} volume spike: ${(kline.volume/avgVol).toFixed(1)}x`);
-        windowTypes = recordLiveSignal(symbol, 'volume_spike');
-      }
-    }
-
-    // C: Price breakout vs scan-time S/R levels
-    if (candidate.support && candidate.resistance) {
-      if (kline.close > candidate.resistance) {
-        console.log(`[ws-monitor] ${symbol} broke resistance $${candidate.resistance.toFixed(4)}`);
-        windowTypes = recordLiveSignal(symbol, 'breakout_high');
-      } else if (kline.close < candidate.support) {
-        console.log(`[ws-monitor] ${symbol} broke support $${candidate.support.toFixed(4)}`);
-        windowTypes = recordLiveSignal(symbol, 'breakout_low');
-      }
-    }
-
-    if (windowTypes.size >= SIGNALS_REQUIRED && canEscalate(symbol)) {
-      escalateToSwarm(symbol, windowTypes, kline.close).catch(e =>
-        console.error(`[ws-monitor] Escalation error ${symbol}: ${e.message}`)
-      );
-    }
+  canEscalate(symbol) {
+    return (Date.now() - (this.cooldowns.get(symbol) ?? 0)) > ESCALATION_COOLDOWN_MS;
   }
 
-  connect(symbol) {
-    if (this.connections.has(symbol)) return;
-    const buffer = [];
-    const ws     = new WebSocket(`${BINANCE_WS_BASE}/${symbol.toLowerCase()}@kline_1m`);
+  recordSignal(symbol, type) {
+    const now = Date.now();
+    if (!this.sigWindows.has(symbol)) this.sigWindows.set(symbol, []);
+    const events = this.sigWindows.get(symbol);
+    events.push({ type, timestamp: now });
+    const cutoff = now - this.profile.wsEscalationMs;
+    const fresh  = events.filter(e => e.timestamp > cutoff);
+    this.sigWindows.set(symbol, fresh);
+    return new Set(fresh.map(e => e.type));
+  }
 
-    ws.on('open',  () => console.log(`[ws-monitor] ✓ Connected — ${symbol}`));
-    ws.on('error', e  => console.error(`[ws-monitor] Error ${symbol}: ${e.message}`));
+  markEscalated(symbol) {
+    this.cooldowns.set(symbol, Date.now());
+    this.sigWindows.delete(symbol);
+  }
+
+  connectWS(symbol) {
+    if (this.wsConns.has(symbol)) return;
+    const buf = [];
+    const ws  = new WebSocket(`${BINANCE_WS_BASE}/${symbol.toLowerCase()}@kline_1m`);
+
+    ws.on('open',  () => console.log(`[ws:${this.profile.label}] ✓ ${symbol}`));
+    ws.on('error', e  => console.error(`[ws:${this.profile.label}] Error ${symbol}: ${e.message}`));
     ws.on('close', () => {
-      console.log(`[ws-monitor] Closed — ${symbol}`);
-      this.connections.delete(symbol);
-      if (watchlist.has(symbol)) {
-        setTimeout(() => this.connect(symbol), WS_RECONNECT_DELAY_MS);
+      this.wsConns.delete(symbol);
+      if (this.watchlist.has(symbol)) {
+        setTimeout(() => this.connectWS(symbol), WS_RECONNECT_DELAY_MS);
       }
     });
     ws.on('message', raw => {
@@ -357,35 +207,137 @@ class WebSocketManager {
         const k = JSON.parse(raw).k;
         if (!k) return;
         const kline = {
-          time: k.t, open: parseFloat(k.o), high: parseFloat(k.h),
-          low: parseFloat(k.l), close: parseFloat(k.c),
-          volume: parseFloat(k.v), isFinal: k.x,
+          time: k.t, close: parseFloat(k.c), high: parseFloat(k.h),
+          low: parseFloat(k.l), volume: parseFloat(k.v), isFinal: k.x,
         };
-        this._updateBuffer(buffer, kline);
-        this._check(symbol, kline, buffer);
+        // Update buffer
+        if (!buf.length || kline.time !== buf[buf.length-1].time) buf.push(kline);
+        else buf[buf.length-1] = kline;
+        if (buf.length > 30) buf.shift();
+
+        this._checkConditions(symbol, kline, buf);
       } catch {}
     });
 
-    this.connections.set(symbol, ws);
+    this.wsConns.set(symbol, ws);
   }
 
-  disconnect(symbol) {
-    const ws = this.connections.get(symbol);
-    if (ws) { ws.terminate(); this.connections.delete(symbol); }
+  _checkConditions(symbol, kline, buf) {
+    if (!this.canEscalate(symbol)) return;
+    const candidate = this.watchlist.get(symbol);
+    if (!candidate) return;
+
+    let windowTypes = this.sigWindows.has(symbol)
+      ? new Set(this.sigWindows.get(symbol).filter(e => e.timestamp > Date.now() - this.profile.wsEscalationMs).map(e => e.type))
+      : new Set();
+
+    // A: RSI threshold (on candle close only)
+    if (kline.isFinal && buf.length >= 15) {
+      const liveRSI = calcRSI(buf);
+      if (liveRSI < this.profile.rsiOversold) {
+        console.log(`[ws:${this.profile.label}] ${symbol} RSI oversold: ${liveRSI.toFixed(1)}`);
+        windowTypes = this.recordSignal(symbol, 'rsi_oversold');
+      } else if (liveRSI > this.profile.rsiOverbought) {
+        console.log(`[ws:${this.profile.label}] ${symbol} RSI overbought: ${liveRSI.toFixed(1)}`);
+        windowTypes = this.recordSignal(symbol, 'rsi_overbought');
+      }
+    }
+
+    // B: Volume spike (profile-specific multiplier)
+    if (buf.length >= 6) {
+      const avgVol = buf.slice(-6,-1).map(c => c.volume).reduce((a,b)=>a+b,0) / 5;
+      if (avgVol > 0 && kline.volume > avgVol * this.profile.volumeSpikeMult) {
+        console.log(`[ws:${this.profile.label}] ${symbol} volume spike: ${(kline.volume/avgVol).toFixed(1)}x`);
+        windowTypes = this.recordSignal(symbol, 'volume_spike');
+      }
+    }
+
+    // C: Price breakout vs scan-time S/R
+    if (candidate.support && candidate.resistance) {
+      if (kline.close > candidate.resistance) {
+        console.log(`[ws:${this.profile.label}] ${symbol} broke resistance $${candidate.resistance.toFixed(4)}`);
+        windowTypes = this.recordSignal(symbol, 'breakout_high');
+      } else if (kline.close < candidate.support) {
+        console.log(`[ws:${this.profile.label}] ${symbol} broke support $${candidate.support.toFixed(4)}`);
+        windowTypes = this.recordSignal(symbol, 'breakout_low');
+      }
+    }
+
+    if (windowTypes.size >= SIGNALS_REQUIRED && this.canEscalate(symbol)) {
+      this._escalate(symbol, windowTypes, kline.close).catch(e =>
+        console.error(`[ws:${this.profile.label}] Escalation error ${symbol}: ${e.message}`)
+      );
+    }
   }
 
-  sync(symbols) {
-    const current = new Set(this.connections.keys());
-    const desired = new Set(symbols);
-    for (const s of current) if (!desired.has(s)) { this.disconnect(s); signalWindows.delete(s); }
-    for (const s of desired) if (!current.has(s))   this.connect(s);
-    if (desired.size) console.log(`[ws-monitor] Active streams: [${[...desired].join(', ')}]`);
+  async _escalate(symbol, triggerTypes, livePrice) {
+    const candidate = this.watchlist.get(symbol);
+    if (!candidate) return;
+
+    console.log(`\n[ws:${this.profile.label}] ⚡ ESCALATING ${symbol}`);
+    console.log(`[ws:${this.profile.label}]   Triggers: [${[...triggerTypes].join(', ')}]  Price: $${livePrice}`);
+
+    this.markEscalated(symbol);
+
+    const macdSignal = candidate.macdCross === 'bullish' ? 'bullish_crossover'
+                     : candidate.macdCross === 'bearish' ? 'bearish_crossover' : 'neutral';
+
+    const { data, error } = await getSupabase().from('signals').insert({
+      asset:       symbol,
+      direction:   candidate.direction,
+      timeframe:   this.profile.signalTimeframe,
+      signal_type: 'websocket_trigger',
+      raw_payload: {
+        asset: symbol, direction: candidate.direction, price: livePrice,
+        rsi: candidate.rsi, volume_ratio: candidate.volumeRatio,
+        macd_signal: macdSignal, atr: candidate.atr,
+        support: candidate.support, resistance: candidate.resistance,
+        signals: candidate.signals, trigger_types: [...triggerTypes],
+        signal_type: 'websocket_trigger',
+        trading_mode: this.profileId,
+      },
+    }).select('id').single();
+
+    if (error) { console.error(`[ws:${this.profile.label}] Signal write failed: ${error.message}`); return; }
+
+    const result = await runDeliberation(data.id);
+    console.log(`[ws:${this.profile.label}] Deliberation: ${symbol} decision=${result.decision} elapsed=${result.elapsedMs}ms`);
+    if (result.tradeInstruction) await executeTrade(result.tradeInstruction);
   }
 
-  status() { return [...this.connections.keys()]; }
+  syncWS() {
+    const current = new Set(this.wsConns.keys());
+    const desired = new Set(this.watchlist.keys());
+    for (const s of current) if (!desired.has(s)) { this.wsConns.get(s)?.terminate(); this.wsConns.delete(s); this.sigWindows.delete(s); }
+    for (const s of desired) if (!current.has(s)) this.connectWS(s);
+    if (desired.size) console.log(`[ws:${this.profile.label}] Streams: [${[...desired].join(', ')}]`);
+  }
+
+  updateWatchlist(results) {
+    // Refresh existing entries, remove those that dropped below threshold
+    for (const [sym, prev] of this.watchlist.entries()) {
+      const fresh = results.find(r => r.symbol === sym);
+      if (!fresh || fresh.score < 1) {
+        this.watchlist.delete(sym);
+        console.log(`[scanner:${this.profile.label}] ${sym} dropped from watchlist`);
+      } else {
+        this.watchlist.set(sym, { ...fresh, addedAt: prev.addedAt });
+      }
+    }
+    // Fill up to max
+    for (const r of results) {
+      if (this.watchlist.size >= MAX_WATCHLIST_SIZE) break;
+      if (r.score >= 1 && !this.watchlist.has(r.symbol)) {
+        console.log(`[scanner:${this.profile.label}] + ${r.symbol} score=${r.score} RSI=${r.rsi} vol=${r.volumeRatio}x [${r.signals.join(', ')}]`);
+        this.watchlist.set(r.symbol, { ...r, addedAt: Date.now() });
+      }
+    }
+  }
 }
 
-const wsManager = new WebSocketManager();
+// Instantiate all four profiles
+const profileStates = {};
+for (const id of ALL_PROFILE_IDS) profileStates[id] = new ProfileState(id);
 
 // ── Background scan ───────────────────────────────────────────────────────────
 
@@ -393,10 +345,11 @@ async function runBackgroundScan() {
   const startTime = Date.now();
   const scanId    = `scan-${startTime}`;
 
-  console.log('\n────────────────────────────────────────────────');
-  console.log(`[scanner] Scan — ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Perth' })} AWST`);
-  console.log('────────────────────────────────────────────────');
+  console.log('\n════════════════════════════════════════════════');
+  console.log(`[scanner] Multi-profile scan — ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Perth' })} AWST`);
+  console.log('════════════════════════════════════════════════');
 
+  // Fetch top 100 pairs once (shared across all profiles)
   let pairs;
   try {
     pairs = await fetchTopPairs();
@@ -404,80 +357,102 @@ async function runBackgroundScan() {
     console.error(`[scanner] Fetch failed: ${err.message}`); return;
   }
 
-  const results = [];
-  let n = 0;
-  for (const pair of pairs) {
-    try {
-      const candles = await fetchCandles(pair.symbol);
-      results.push(scoreAsset(pair.symbol, pair.price, candles));
-      if (++n % 20 === 0) { await new Promise(r => setTimeout(r, 300)); console.log(`[scanner] ${n}/${pairs.length}...`); }
-    } catch (err) {
-      console.warn(`[scanner] Skip ${pair.symbol}: ${err.message}`);
+  // Run each profile's scan in parallel
+  const profileResults = {};
+  await Promise.all(ALL_PROFILE_IDS.map(async (profileId) => {
+    const state   = profileStates[profileId];
+    const profile = state.profile;
+    const results = [];
+    let n = 0;
+
+    for (const pair of pairs) {
+      try {
+        const candles = await fetchCandles(pair.symbol, profile.candleInterval, profile.candleLimit);
+        results.push(scoreAsset(pair.symbol, pair.price, candles, profile));
+        if (++n % 25 === 0) await new Promise(r => setTimeout(r, 200));
+      } catch (err) {
+        console.warn(`[scanner:${profile.label}] Skip ${pair.symbol}: ${err.message}`);
+      }
     }
-  }
 
-  results.sort((a, b) => b.score - a.score);
+    results.sort((a, b) => b.score - a.score);
+    profileResults[profileId] = results;
 
-  // Refresh existing watchlist entries, remove ones that dropped below threshold
-  for (const [sym, prev] of watchlist.entries()) {
-    const fresh = results.find(r => r.symbol === sym);
-    if (!fresh || fresh.score < MIN_SIGNAL_SCORE) {
-      console.log(`[scanner] ${sym} dropped from watchlist (score too low)`);
-      watchlist.delete(sym);
-    } else {
-      watchlist.set(sym, { ...fresh, addedAt: prev.addedAt });
+    state.updateWatchlist(results);
+    state.syncWS();
+
+    console.log(`[scanner:${profile.label}] Watchlist (${state.watchlist.size}/${MAX_WATCHLIST_SIZE}) on ${profile.candleInterval} candles:`);
+    for (const [sym, c] of state.watchlist.entries()) {
+      const cd = ESCALATION_COOLDOWN_MS - (Date.now() - (state.cooldowns.get(sym) ?? 0));
+      const cdStr = cd > 0 ? `cooldown ${Math.round(cd/60000)}min` : 'ready';
+      console.log(`  ${sym.padEnd(14)} score=${c.score} ${c.direction} RSI=${c.rsi} [${cdStr}]`);
     }
-  }
+  }));
 
-  // Fill watchlist up to max
-  for (const r of results) {
-    if (watchlist.size >= MAX_WATCHLIST_SIZE) break;
-    if (r.score >= MIN_SIGNAL_SCORE && !watchlist.has(r.symbol)) {
-      console.log(`[scanner] + ${r.symbol} score=${r.score} RSI=${r.rsi} vol=${r.volumeRatio}x [${r.signals.join(', ')}]`);
-      watchlist.set(r.symbol, { ...r, addedAt: Date.now() });
-    }
-  }
-
-  console.log(`[scanner] Watchlist (${watchlist.size}/${MAX_WATCHLIST_SIZE}):`);
-  for (const [sym, c] of watchlist.entries()) {
-    const cooldownMs = ESCALATION_COOLDOWN_MS - (Date.now() - (lastEscalation.get(sym) ?? 0));
-    const cd = cooldownMs > 0 ? `cooldown ${Math.round(cooldownMs/60000)}min` : 'ready';
-    console.log(`  ${sym.padEnd(14)} score=${c.score} ${c.direction} RSI=${c.rsi} [${cd}]`);
-  }
-
-  wsManager.sync([...watchlist.keys()]);
-
+  // Persist scan results + watchlists to Supabase
   try {
-    // Insert scanner_runs FIRST — scanner_results has a FK dependency on it
     await getSupabase().from('scanner_runs').insert({
-      id: scanId, total_assets: results.length, escalated: watchlist.size,
+      id: scanId, total_assets: pairs.length, escalated: 0,
       duration_ms: Date.now() - startTime, scanned_at: new Date().toISOString(),
     });
-    await persistScanResults(scanId, results);
-    await persistWatchlist();
+
+    // Persist all results tagged by profile
+    const allRows = [];
+    for (const [profileId, results] of Object.entries(profileResults)) {
+      const profile = TRADING_PROFILES[profileId];
+      for (const r of results) {
+        allRows.push({
+          scan_id: scanId, symbol: r.symbol, price: r.price, score: r.score,
+          direction: r.direction, rsi: r.rsi, volume_ratio: r.volumeRatio,
+          macd_cross: r.macdCross, signals: r.signals,
+          escalated: profileStates[profileId].watchlist.has(r.symbol),
+          scanned_at: new Date().toISOString(),
+          trading_mode: profileId,
+          timeframe: profile.signalTimeframe,
+        });
+      }
+    }
+    for (let i = 0; i < allRows.length; i += 50) {
+      const { error } = await getSupabase().from('scanner_results').insert(allRows.slice(i, i+50));
+      if (error) console.warn(`[scanner] Persist error: ${error.message}`);
+    }
+
+    // Persist all watchlists
+    const expiry = new Date(Date.now() + 24*60*60*1000).toISOString();
+    for (const [profileId, state] of Object.entries(profileStates)) {
+      for (const [symbol, c] of state.watchlist.entries()) {
+        const { error } = await getSupabase().from('watchlist_active').upsert({
+          symbol: `${profileId}:${symbol}`,   // namespaced key — one row per profile per symbol
+          score: c.score, reasons: c.signals, price: c.price,
+          direction: c.direction, expires_at: expiry,
+          created_at: new Date().toISOString(),
+          trading_mode: profileId,
+          timeframe: TRADING_PROFILES[profileId].signalTimeframe,
+        }, { onConflict: 'symbol' });
+        if (error) console.warn(`[scanner] Watchlist upsert error: ${error.message}`);
+      }
+    }
   } catch (err) {
     console.warn(`[scanner] Persist error (non-fatal): ${err.message}`);
   }
 
-  console.log(`[scanner] Done in ${((Date.now()-startTime)/1000).toFixed(1)}s`);
+  console.log(`[scanner] Scan complete in ${((Date.now()-startTime)/1000).toFixed(1)}s`);
 }
 
 // ── Scheduler ─────────────────────────────────────────────────────────────────
 
 function schedule() {
   try { require('ws'); } catch {
-    console.error('[scanner] FATAL: "ws" package not installed. Run: npm install ws');
-    return;
+    console.error('[scanner] FATAL: "ws" not installed. Run: npm install ws'); return;
   }
 
-  console.log('[scanner] Market Scanner v2 — Hybrid Watchlist + WebSocket');
-  console.log(`[scanner] Scan interval : every ${SCAN_INTERVAL_MS/60000} minutes`);
-  console.log(`[scanner] Watchlist size: max ${MAX_WATCHLIST_SIZE} pairs`);
-  console.log(`[scanner] Escalation    : ${SIGNALS_REQUIRED} conditions within ${TRIGGER_WINDOW_MS/60000}min`);
-  console.log(`[scanner] Cooldown      : ${ESCALATION_COOLDOWN_MS/60000}min per pair`);
+  console.log('[scanner] Market Scanner v3 — Multi-Profile (Intraday · Day Trade · Swing · Position)');
+  console.log(`[scanner] Profiles  : ${ALL_PROFILE_IDS.map(id => `${TRADING_PROFILES[id].label} (${TRADING_PROFILES[id].candleInterval})`).join(' · ')}`);
+  console.log(`[scanner] Interval  : every ${SCAN_INTERVAL_MS/60000} minutes`);
+  console.log(`[scanner] Escalation: ${SIGNALS_REQUIRED} conditions within profile window`);
 
   runBackgroundScan().catch(err => console.error('[scanner] Startup scan error:', err.message));
   setInterval(() => runBackgroundScan().catch(e => console.error('[scanner] Scan error:', e.message)), SCAN_INTERVAL_MS);
 }
 
-module.exports = { schedule, runBackgroundScan, watchlist, wsManager };
+module.exports = { schedule, runBackgroundScan, profileStates };

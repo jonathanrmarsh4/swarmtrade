@@ -57,6 +57,8 @@ function buildRound1Prompt(marketData) {
     direction,
     signalType,
     timeframe,
+    tradingMode,
+    holdDescription,
   } = marketData;
 
   const volumeLabel = volume >= 1.5 ? 'significantly above average'
@@ -67,10 +69,11 @@ function buildRound1Prompt(marketData) {
   const userMessage = `Analyse this trade signal from a bullish perspective.
 
 SIGNAL
-  Asset:       ${asset}
-  Direction:   ${direction}
-  Signal type: ${signalType}
-  Timeframe:   ${timeframe}
+  Asset:        ${asset}
+  Direction:    ${direction}
+  Signal type:  ${signalType}
+  Timeframe:    ${timeframe}
+  Trading mode: ${tradingMode ?? 'day trade'} — ${holdDescription ?? 'hold <24h'}
 
 MARKET DATA
   Current price: $${currentPrice.toLocaleString()}
