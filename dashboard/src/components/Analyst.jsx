@@ -366,10 +366,8 @@ export default function Analyst() {
     setMessages(prev => [...prev, userMsg, thinking]);
 
     try {
-      // Fetch live system snapshot
-      const snapshot = await fetchSystemSnapshot();
-
-      // Fetch live architecture source if the question is about how the system works
+      // For architecture/flow diagram questions: fetch source code and append to user message
+      // All other context (deliberations, sentiment, positions, news) is now built server-side
       let architectureBlock = '';
       if (wantsArchitecture(userText)) {
         const arch = await fetchArchitecture();
@@ -379,54 +377,11 @@ export default function Analyst() {
             .map(([k, v]) => `### ${k}\n\`\`\`javascript\n${v.slice(0, 6000)}${v.length > 6000 ? '\n// ... (truncated)' : ''}\n\`\`\``)
             .join('\n\n');
           const configSummary = JSON.stringify(arch.systemConfig, null, 2);
-          architectureBlock = `\n\n## LIVE ARCHITECTURE SOURCE (read this to answer the question accurately)\n\n### Live system_config (current thresholds & settings)\n\`\`\`json\n${configSummary}\n\`\`\`\n\n${filesSummary}`;
+          architectureBlock = `\n\n## LIVE SOURCE CODE (use this to generate an accurate flow diagram)\n\n### system_config\n\`\`\`json\n${configSummary}\n\`\`\`\n\n${filesSummary}`;
         }
       }
 
-      // Build context injection
-      const contextBlock = `
-## LIVE SYSTEM DATA (as of ${new Date(snapshot.timestamp).toLocaleString('en-AU', { timeZone: 'Australia/Perth' })} AWST)
-
-### Recent Deliberations (last ${snapshot.deliberations.total})
-Decision breakdown: ${JSON.stringify(snapshot.deliberations.decisionBreakdown)}
-Avg Bull score: ${snapshot.deliberations.avgBullScore} | Avg Bear score: ${snapshot.deliberations.avgBearScore}
-${snapshot.deliberations.recent.slice(0, 10).map(d =>
-  `- ${d.asset ?? '?'} ${d.direction ?? ''} | ${d.final_decision?.toUpperCase()} | Bull:${d.bull_score} Bear:${d.bear_score} Sentiment:${d.sentiment_score} | Macro:${d.macro_regime} | Risk:${d.risk_approved ? 'approved' : 'vetoed'} | ${d.started_at?.slice(0,16)}`
-).join('\n')}
-
-### Trade Performance
-Open positions: ${snapshot.trades.open.length}
-${snapshot.trades.open.map(t => `  - ${t.asset} ${t.direction} entry:$${t.entry_price} size:${t.position_size_pct}%`).join('\n')}
-Closed trades: ${snapshot.trades.totalClosed} | Win rate: ${snapshot.trades.winRate ?? 'N/A'}%
-${snapshot.trades.recentClosed.slice(0,5).map(t =>
-  `- ${t.asset} ${t.direction} P&L:${t.pnl_pct > 0 ? '+' : ''}${t.pnl_pct?.toFixed(2)}%`
-).join('\n')}
-
-### Agent Reputation
-${snapshot.agentReputation.map(a =>
-  `- ${a.agent_name}: accuracy=${a.accuracy_pct?.toFixed(1)}% wins=${a.wins} losses=${a.losses} calls=${a.total_calls}`
-).join('\n')}
-
-### Latest Scanner Run
-${snapshot.scanner.latestRun
-  ? `Ran: ${new Date(snapshot.scanner.latestRun.scanned_at).toLocaleString('en-AU', { timeZone: 'Australia/Perth' })} AWST
-Assets screened: ${snapshot.scanner.latestRun.total_assets} | Escalated: ${snapshot.scanner.latestRun.escalated} | Duration: ${(snapshot.scanner.latestRun.duration_ms/1000).toFixed(1)}s
-Top candidates:
-${snapshot.scanner.topResults.slice(0,10).map(r =>
-  `  ${r.symbol} score:${r.score}/4 ${r.direction} RSI:${r.rsi} vol:${r.volume_ratio}× ${r.escalated ? '→ SWARM' : ''} signals:[${r.signals?.join(', ')}]`
-).join('\n')}`
-  : 'No scan data yet'}
-
-### Current Sentiment
-${snapshot.sentiment
-  ? `Fear & Greed: ${snapshot.sentiment.fear_greed_score}/100 (${snapshot.sentiment.fear_greed_label}) | Score: ${snapshot.sentiment.score}/100 | ${snapshot.sentiment.summary}`
-  : 'No sentiment data'}
-
-### Recent Reflections (nightly agent self-assessment)
-${snapshot.reflections.slice(0,2).map(r => `- ${r.created_at?.slice(0,10)}: ${r.summary ?? r.content?.slice(0,200)}`).join('\n') || 'None yet'}
-`;
-
-      // Build message history for API (exclude thinking placeholder)
+      // Build message history (exclude thinking placeholder)
       const history = messages
         .filter(m => m.content !== '...')
         .map(m => ({ role: m.role, content: m.content }));
@@ -436,10 +391,10 @@ ${snapshot.reflections.slice(0,2).map(r => `- ${r.created_at?.slice(0,10)}: ${r.
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          system: SYSTEM_PROMPT,
+          // system prompt is built server-side with live Supabase context
           messages: [
             ...history,
-            { role: 'user', content: contextBlock + architectureBlock + '\n\n---\n\nUser question: ' + userText },
+            { role: 'user', content: userText + architectureBlock },
           ],
         }),
       });

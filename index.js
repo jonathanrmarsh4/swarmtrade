@@ -261,10 +261,29 @@ const server = http.createServer((req, res) => {
       req.on('data', c => body += c);
       req.on('end', async () => {
         try {
-          const { value } = JSON.parse(body);
+          const { value, reason } = JSON.parse(body);
+
+          // Read old value before overwriting (for audit log)
+          const { data: existing } = await sb.from('system_config')
+            .select('value').eq('key', key).maybeSingle();
+          const oldValue = existing?.value ?? null;
+
+          // Upsert new value
           const { error } = await sb.from('system_config')
             .upsert({ key, value }, { onConflict: 'key' });
           if (error) throw error;
+
+          // Write audit log entry (best-effort — don't fail the save if audit fails)
+          sb.from('config_audit_log').insert({
+            setting_key: key,
+            old_value:   oldValue,
+            new_value:   value,
+            changed_by:  'user',
+            reason:      reason ?? null,
+          }).then(({ error: auditErr }) => {
+            if (auditErr) console.warn(`[config] Audit log write failed: ${auditErr.message}`);
+          });
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ key, value, saved: true }));
         } catch (err) {
