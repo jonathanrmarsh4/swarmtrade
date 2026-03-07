@@ -407,15 +407,36 @@ async function runBackgroundScan() {
     state.syncWS();
 
     // Direct scan escalation — score >= 2 means 2+ independent indicators fired.
-    // Fire swarm immediately without waiting for WebSocket confirmation.
-    // Cooldown (30 min) prevents re-firing on the next scan cycle for the same pair.
+    // Write signal + trigger deliberation directly WITHOUT going through _escalate()
+    // because _escalate() requires the pair to be on the watchlist (max 5 slots).
+    // We want to escalate the top scoring pairs regardless of watchlist availability.
     for (const r of results.slice(0, 20)) {
       if (r.score >= 2 && state.canEscalate(r.symbol)) {
-        const triggerLabels = r.signals.slice(0, 2).map(s => s.replace(/[\s()]/g, '_').toLowerCase());
-        console.log(`[scanner:${profile.label}] ⚡ Direct escalation — ${r.symbol} score=${r.score} RSI=${r.rsi} vol=${r.volumeRatio.toFixed(1)}x`);
-        state._escalate(r.symbol, new Set(['scan_conviction', `score_${r.score}`, ...triggerLabels]), r.price).catch(e =>
-          console.error(`[scanner:${profile.label}] Direct escalation error: ${e.message}`)
-        );
+        state.cooldowns.set(r.symbol, Date.now()); // claim cooldown before async work
+        const macdSig = r.macdCross === 'bullish' ? 'bullish_crossover'
+                      : r.macdCross === 'bearish' ? 'bearish_crossover' : 'neutral';
+        console.log(`[scanner:${profile.label}] ⚡ Direct escalation — ${r.symbol} score=${r.score} RSI=${r.rsi} vol=${r.volumeRatio.toFixed(1)}x [${r.signals.join(', ')}]`);
+        (async (asset, dir, price, scanR) => {
+          try {
+            const { data, error } = await getSupabase().from('signals').insert({
+              asset: asset, direction: dir, timeframe: profile.signalTimeframe,
+              signal_type: 'scan_direct',
+              raw_payload: {
+                asset, direction: dir, price, rsi: scanR.rsi,
+                volume_ratio: scanR.volumeRatio, macd_signal: macdSig,
+                atr: scanR.atr, support: scanR.support, resistance: scanR.resistance,
+                signals: scanR.signals, trigger_types: ['scan_conviction', `score_${scanR.score}`],
+                signal_type: 'scan_direct', trading_mode: profileId,
+              },
+            }).select('id').single();
+            if (error) { console.error(`[scanner:${profile.label}] Signal write failed: ${error.message}`); return; }
+            const result = await runDeliberation(data.id);
+            console.log(`[scanner:${profile.label}] Deliberation done — ${asset} decision=${result.decision}`);
+            if (result.tradeInstruction) await executeTrade(result.tradeInstruction);
+          } catch (err) {
+            console.error(`[scanner:${profile.label}] Direct escalation error ${asset}: ${err.message}`);
+          }
+        })(r.symbol, r.direction, r.price, r);
       }
     }
 
