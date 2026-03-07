@@ -781,6 +781,10 @@ async function runDeliberation(signalId) {
     `type=${signal.signal_type ?? 'n/a'}`,
   );
 
+  // Always emit signal_received so War Room shows asset/direction header
+  // regardless of whether signal came from scanner or TradingView webhook
+  events.emitSignalReceived(signal.id, signal).catch(() => {});
+
 
   // ── Step 2: Fetch portfolio state ────────────────────────────────────────────
 
