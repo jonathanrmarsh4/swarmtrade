@@ -84,7 +84,7 @@ console.log('[startup] Sentiment agents started \u2014 Crowd Thermometer and New
 // Polls the trades table every 60 seconds for open positions that may need
 // attention: stop-loss / take-profit detection, stale position alerts.
 
-const { start: startTradeMonitor } = require('./scripts/trade-monitor.js');
+const { start: startTradeMonitor, closeTrade } = require('./scripts/trade-monitor.js');
 startTradeMonitor();
 console.log('[startup] Trade monitor started \u2014 checking open positions every 60 seconds');
 
@@ -179,6 +179,74 @@ const server = http.createServer((req, res) => {
         res.writeHead(502, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
       });
+    return;
+  }
+
+  // ── Manual trade close endpoint ─────────────────────────────────────────────
+  // POST /trades/:id/close  { exitPrice?: number, reason?: string }
+  // Fetches the trade, resolves asset/direction (from deliberation if needed),
+  // fetches live price if exitPrice not provided, then calls closeTrade().
+  const closeMatch = req.method === 'POST' && req.url.match(/^\/trades\/([^/]+)\/close$/);
+  if (closeMatch) {
+    const tradeId = closeMatch[1];
+    let body = '';
+    req.on('data', c => { body += c; });
+    req.on('end', async () => {
+      try {
+        const payload = body ? JSON.parse(body) : {};
+
+        // Fetch trade row
+        const { data: trade, error: tradeErr } = await getSupabase()
+          .from('trades').select('*').eq('id', tradeId).single();
+        if (tradeErr || !trade) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Trade not found' }));
+          return;
+        }
+        if (trade.exit_time) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Trade already closed' }));
+          return;
+        }
+
+        // Resolve asset + direction — prefer trades columns, fall back to deliberation
+        let asset     = trade.asset;
+        let direction = trade.direction;
+        if (!asset || !direction) {
+          const { data: delib } = await getSupabase()
+            .from('deliberations').select('asset, direction')
+            .eq('id', trade.deliberation_id).single();
+          asset     = asset     ?? delib?.asset;
+          direction = direction ?? delib?.direction;
+        }
+        if (!asset || !direction) {
+          res.writeHead(422, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Cannot resolve asset/direction for this trade' }));
+          return;
+        }
+
+        // Resolve exit price — use provided value or fetch live from Binance
+        let exitPrice = payload.exitPrice ? parseFloat(payload.exitPrice) : null;
+        if (!exitPrice) {
+          const symbol = asset.replace('/', '');
+          const tickerRes = await fetch(
+            `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`
+          );
+          const ticker = await tickerRes.json();
+          exitPrice = ticker.price ? parseFloat(ticker.price) : parseFloat(trade.entry_price);
+        }
+
+        const reason = payload.reason ?? 'manual';
+        await closeTrade(trade, asset, direction, exitPrice, reason);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, tradeId, exitPrice, reason }));
+      } catch (err) {
+        console.error('[server] /trades/close error:', err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
     return;
   }
 

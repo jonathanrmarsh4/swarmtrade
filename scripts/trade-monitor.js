@@ -405,4 +405,4 @@ function start() {
 }
 
 
-module.exports = { start, monitorOpenTrades };
+module.exports = { start, monitorOpenTrades, closeTrade };

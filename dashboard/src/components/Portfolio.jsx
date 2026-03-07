@@ -273,10 +273,12 @@ function RSIIndicator({ asset, timeframe }) {
 }
 
 // ── Trade detail modal ─────────────────────────────────────────────────────────
-function TradeDetailPanel({ trade, onClose }) {
+function TradeDetailPanel({ trade, onClose, onClosed }) {
   const { formatTs } = useTimezone();
   const [deliberation, setDeliberation] = useState(null);
   const [livePrice, setLivePrice] = useState(null);
+  const [closing, setClosing] = useState(false);   // 'confirm' | 'loading' | null
+  const [closeError, setCloseError] = useState(null);
 
   // Fetch deliberation — also used to fill in asset/direction for old trades
   // that were created before migration 016 added those columns to the trades table
@@ -311,6 +313,31 @@ function TradeDetailPanel({ trade, onClose }) {
   const stopDist  = trade.stop_loss   && entry ? Math.abs(((trade.stop_loss   - entry) / entry * 100)).toFixed(2) : null;
   const tpDist    = trade.take_profit && entry ? Math.abs(((trade.take_profit - entry) / entry * 100)).toFixed(2) : null;
 
+  const confirmClose = () => { setClosing('confirm'); setCloseError(null); };
+  const cancelClose  = () => { setClosing(null); setCloseError(null); };
+  const executeClose = async (reason) => {
+    setClosing('loading');
+    setCloseError(null);
+    try {
+      const res = await fetch(
+        `${BACKEND}/trades/${trade.id}/close`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ exitPrice: livePrice, reason }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Close failed');
+      setClosing(null);
+      onClosed?.();   // refresh portfolio list
+      onClose();
+    } catch (err) {
+      setCloseError(err.message);
+      setClosing(null);
+    }
+  };
+
   return (
     <div style={{
       position: 'fixed', inset: 0, background: '#00000088', zIndex: 1000,
@@ -343,7 +370,7 @@ function TradeDetailPanel({ trade, onClose }) {
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {/* Live P&L */}
             {pnlPct != null && (
               <div style={{ textAlign: 'right' }}>
@@ -353,6 +380,17 @@ function TradeDetailPanel({ trade, onClose }) {
                 </div>
               </div>
             )}
+            {/* Close trade button */}
+            {closing !== 'confirm' && closing !== 'loading' && (
+              <button onClick={confirmClose} style={{
+                padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                border: `1px solid ${C.red}60`, background: `${C.red}18`,
+                color: C.red, fontSize: 12, fontWeight: 700,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <Shield size={13} /> Close Trade
+              </button>
+            )}
             <button onClick={onClose} style={{
               background: 'none', border: `1px solid ${C.border}`, borderRadius: 8,
               color: C.textMuted, cursor: 'pointer', padding: '6px 8px',
@@ -360,6 +398,68 @@ function TradeDetailPanel({ trade, onClose }) {
             }}><X size={16} /></button>
           </div>
         </div>
+
+        {/* Close confirmation panel */}
+        {(closing === 'confirm' || closing === 'loading') && (
+          <div style={{
+            background: `${C.red}12`, border: `1px solid ${C.red}50`,
+            borderRadius: 10, padding: '16px 20px', marginBottom: 16,
+          }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: C.red, marginBottom: 6 }}>
+              Close this trade?
+            </div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14 }}>
+              Exit price: <span style={{ color: C.amber, fontFamily: 'monospace', fontWeight: 700 }}>
+                {livePrice ? `$${livePrice.toLocaleString(undefined, {maximumFractionDigits: 6})}` : 'live price'}
+              </span>
+              {pnlPct != null && (
+                <span style={{ marginLeft: 12, color: pnlColor, fontWeight: 700 }}>
+                  {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}% P&L
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => executeClose('manual')} disabled={closing === 'loading'}
+                style={{
+                  padding: '8px 18px', borderRadius: 7, cursor: 'pointer',
+                  border: 'none', background: C.red,
+                  color: '#fff', fontSize: 13, fontWeight: 800,
+                  opacity: closing === 'loading' ? 0.6 : 1,
+                }}>
+                {closing === 'loading' ? 'Closing…' : 'Confirm Close'}
+              </button>
+              <button onClick={() => executeClose('take_profit')} disabled={closing === 'loading'}
+                style={{
+                  padding: '8px 14px', borderRadius: 7, cursor: 'pointer',
+                  border: `1px solid ${C.green}60`, background: `${C.green}18`,
+                  color: C.green, fontSize: 12, fontWeight: 700,
+                  opacity: closing === 'loading' ? 0.6 : 1,
+                }}>
+                ✓ Take Profit
+              </button>
+              <button onClick={() => executeClose('stop_loss')} disabled={closing === 'loading'}
+                style={{
+                  padding: '8px 14px', borderRadius: 7, cursor: 'pointer',
+                  border: `1px solid ${C.red}40`, background: 'none',
+                  color: C.textMuted, fontSize: 12, cursor: 'pointer',
+                  opacity: closing === 'loading' ? 0.6 : 1,
+                }}>
+                ✗ Stop Loss
+              </button>
+              <button onClick={cancelClose} disabled={closing === 'loading'}
+                style={{
+                  padding: '8px 14px', borderRadius: 7, cursor: 'pointer',
+                  border: `1px solid ${C.border}`, background: 'none',
+                  color: C.textMuted, fontSize: 12, marginLeft: 'auto',
+                }}>
+                Cancel
+              </button>
+            </div>
+            {closeError && (
+              <div style={{ marginTop: 10, fontSize: 12, color: C.red }}>{closeError}</div>
+            )}
+          </div>
+        )}
 
         {/* Chart */}
         <div style={{ marginBottom: 16 }}>
@@ -531,9 +631,10 @@ function PositionRow({ trade, onClick }) {
 // ── Root ───────────────────────────────────────────────────────────────────────
 export default function Portfolio() {
   const [selectedTrade, setSelectedTrade] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const { data: trades, loading, error } = useRealtimeTable('trades', {
     orderBy: 'entry_time', ascending: false, limit: 20,
-  });
+  }, refreshKey);
 
   const openTrades   = trades.filter(t => t.exit_time == null);
   const closedTrades = trades.filter(t => t.exit_time != null);
@@ -606,7 +707,11 @@ export default function Portfolio() {
 
       {/* Trade detail modal */}
       {selectedTrade && (
-        <TradeDetailPanel trade={selectedTrade} onClose={() => setSelectedTrade(null)} />
+        <TradeDetailPanel
+          trade={selectedTrade}
+          onClose={() => setSelectedTrade(null)}
+          onClosed={() => { setSelectedTrade(null); setRefreshKey(k => k + 1); }}
+        />
       )}
     </div>
   );
