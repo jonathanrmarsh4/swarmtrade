@@ -13,41 +13,82 @@
  *  - SONNET  → Complex reasoning, synthesis, world knowledge (Orchestrator, Macro)
  *  - HAIKU   → Speed-optimised, parallel execution, focused tasks (Bull, Bear, Sentiment, Quant)
  *  - NONE    → Risk Agent is a deterministic rules engine. Zero LLM calls. Zero tolerance.
+ *
+ * Dynamic overrides:
+ *  - User can override per-agent models via the Settings dashboard
+ *  - Overrides are stored in Supabase system_config under key 'agent_model_config'
+ *  - Call loadModelOverrides() once at startup (called automatically on first import)
+ *  - MODELS object is mutated in place so all agents pick up changes without restart
  */
 
-const MODELS = {
+// ── Default (recommended) model assignments ───────────────────────────────────
 
-  // ── Tier 1: Claude Sonnet ─────────────────────────────────────────────────
-  // Use for agents requiring nuanced reasoning, synthesis, or broad world knowledge.
-
-  /** Orchestrator — synthesises all agent outputs into final trade decision */
+const RECOMMENDED_MODELS = {
   orchestrator: 'claude-sonnet-4-5',
-
-  /** Macro Agent — requires broad economic and geopolitical knowledge */
-  macro: 'claude-sonnet-4-5',
-
-
-  // ── Tier 2: Claude Haiku ──────────────────────────────────────────────────
-  // Use for agents that run in parallel, are speed-sensitive, or have focused tasks.
-
-  /** Bull Agent — momentum analysis, runs in parallel with Bear and Sentiment */
-  bull: 'claude-haiku-4-5-20251001',
-
-  /** Bear Agent — contrarian analysis, runs in parallel with Bull and Sentiment */
-  bear: 'claude-haiku-4-5-20251001',
-
-  /** Sentiment Agent — high-frequency polling, news detection, crowd thermometer */
-  sentiment: 'claude-haiku-4-5-20251001',
-
-  /** Quant Agent — deterministic calculations, Haiku used for output formatting only */
-  quant: 'claude-haiku-4-5-20251001',
-
-
-  // ── Tier 3: No Model ──────────────────────────────────────────────────────
-  // Risk Agent is intentionally absent. It is a deterministic rules engine.
-  // Any Anthropic API call in /agents/risk/ is a critical bug.
-
+  macro:        'claude-sonnet-4-5',
+  bull:         'claude-haiku-4-5-20251001',
+  bear:         'claude-haiku-4-5-20251001',
+  sentiment:    'claude-haiku-4-5-20251001',
+  quant:        'claude-haiku-4-5-20251001',
 };
+
+// MODELS is the live object all agents import — starts as defaults, overrides applied on top
+const MODELS = { ...RECOMMENDED_MODELS };
+
+// ── Dynamic override loader ────────────────────────────────────────────────────
+// Loads user-configured model selections from Supabase and applies them to MODELS.
+// Safe to call multiple times — always falls back to RECOMMENDED_MODELS on error.
+
+let _overridesLoaded = false;
+
+async function loadModelOverrides() {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+    const { data, error } = await sb
+      .from('system_config')
+      .select('value')
+      .eq('key', 'agent_model_config')
+      .maybeSingle();
+
+    if (error || !data?.value) {
+      // No overrides saved yet — use defaults silently
+      return;
+    }
+
+    const overrides = data.value;
+    const validAgents = Object.keys(RECOMMENDED_MODELS);
+    const validModels = Object.keys(MODEL_METADATA);
+
+    let applied = 0;
+    for (const agent of validAgents) {
+      if (overrides[agent] && validModels.includes(overrides[agent])) {
+        MODELS[agent] = overrides[agent];
+        applied++;
+      }
+    }
+
+    if (applied > 0) {
+      console.log(`[models] Applied ${applied} model override(s) from Supabase`);
+      Object.entries(MODELS).forEach(([agent, model]) => {
+        const isDefault = model === RECOMMENDED_MODELS[agent];
+        console.log(`  ${agent}: ${model}${isDefault ? ' (default)' : ' ← OVERRIDE'}`);
+      });
+    }
+  } catch (err) {
+    console.warn('[models] Could not load model overrides — using defaults:', err.message);
+    // Reset to defaults on error to be safe
+    Object.assign(MODELS, RECOMMENDED_MODELS);
+  } finally {
+    _overridesLoaded = true;
+  }
+}
+
+// Auto-load on first import (non-blocking — agents won't wait for this)
+// For startup correctness, call await loadModelOverrides() explicitly in index.js
+if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
+  loadModelOverrides();
+}
 
 
 // ── Model metadata ────────────────────────────────────────────────────────────
@@ -131,7 +172,9 @@ const AGENT_OUTPUT_SCHEMA = {
 
 module.exports = {
   MODELS,
+  RECOMMENDED_MODELS,
   MODEL_METADATA,
   TOKEN_BUDGETS,
   AGENT_OUTPUT_SCHEMA,
+  loadModelOverrides,
 };

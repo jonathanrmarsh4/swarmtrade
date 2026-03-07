@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import TestSignal from './TestSignal';
-import { Settings as SettingsIcon, FlaskConical, Webhook, Shield, Clock, Globe, Check, Crosshair, Plus, X, RefreshCw, TrendingUp, Target, Activity, ChevronDown, ChevronUp, ScanLine } from 'lucide-react';
+import { Settings as SettingsIcon, FlaskConical, Webhook, Shield, Clock, Globe, Check, Crosshair, Plus, X, RefreshCw, TrendingUp, Target, Activity, ChevronDown, ChevronUp, ScanLine, Cpu } from 'lucide-react';
 import { useTimezone, TIMEZONE_GROUPS, ALL_ZONES } from '../lib/timezone';
 import { supabase } from '../lib/supabase';
 
@@ -927,6 +927,344 @@ function ScannerConfigCard() {
   );
 }
 
+// ─── Agent Model Configuration Card ──────────────────────────────────────────
+
+const AVAILABLE_MODELS = [
+  {
+    id: 'claude-haiku-4-5-20251001',
+    label: 'Haiku',
+    fullLabel: 'Claude Haiku',
+    color: '#4ade80',
+    badge: 'Fast · Cheap',
+    description: 'Speed-optimised. Best for parallel, focused tasks.',
+    costPer1k: '$0.00025',
+  },
+  {
+    id: 'claude-sonnet-4-5',
+    label: 'Sonnet',
+    fullLabel: 'Claude Sonnet',
+    color: '#60a5fa',
+    badge: 'Balanced',
+    description: 'Strong reasoning with good cost efficiency.',
+    costPer1k: '$0.003',
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    label: 'Sonnet 4.6',
+    fullLabel: 'Claude Sonnet 4.6',
+    color: '#a78bfa',
+    badge: 'Latest',
+    description: 'Newest Sonnet — improved reasoning and speed.',
+    costPer1k: '$0.003',
+  },
+  {
+    id: 'claude-opus-4-6',
+    label: 'Opus 4.6',
+    fullLabel: 'Claude Opus 4.6',
+    color: '#f59e0b',
+    badge: 'Most Capable',
+    description: 'Maximum intelligence. Higher cost.',
+    costPer1k: '$0.015',
+  },
+];
+
+const AGENT_DEFS = [
+  {
+    id: 'orchestrator',
+    name: 'Orchestrator',
+    role: 'Synthesises all agent reports, runs 3-round deliberation, makes final trade decision',
+    recommendedModel: 'claude-sonnet-4-5',
+    isOrchestrator: true,
+  },
+  {
+    id: 'macro',
+    name: 'Macro Agent',
+    role: 'Broad economic and geopolitical regime analysis',
+    recommendedModel: 'claude-sonnet-4-5',
+  },
+  {
+    id: 'bull',
+    name: 'Bull Agent',
+    role: 'Identifies long opportunities and bullish momentum signals',
+    recommendedModel: 'claude-haiku-4-5-20251001',
+  },
+  {
+    id: 'bear',
+    name: 'Bear Agent',
+    role: 'Identifies risks, short setups and bearish signals',
+    recommendedModel: 'claude-haiku-4-5-20251001',
+  },
+  {
+    id: 'sentiment',
+    name: 'Sentiment Agent',
+    role: 'Fear & Greed index, Reddit crowd thermometer, news sentinel',
+    recommendedModel: 'claude-haiku-4-5-20251001',
+  },
+  {
+    id: 'quant',
+    name: 'Quant Agent',
+    role: 'Mathematical analysis, position sizing, expected value calculations',
+    recommendedModel: 'claude-haiku-4-5-20251001',
+  },
+];
+
+const AGENT_MODEL_DEFAULTS = Object.fromEntries(AGENT_DEFS.map(a => [a.id, a.recommendedModel]));
+
+function AgentModelRow({ agent, selectedModel, onChange, isModified }) {
+  const [open, setOpen] = useState(false);
+  const currentModel = AVAILABLE_MODELS.find(m => m.id === selectedModel) || AVAILABLE_MODELS[0];
+
+  return (
+    <div style={{
+      border: `1px solid ${isModified ? C.blue + '40' : C.border}`,
+      borderRadius: 9,
+      background: isModified ? `${C.blue}06` : C.bg,
+      overflow: 'hidden',
+      transition: 'all 0.15s',
+    }}>
+      {/* Header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '11px 14px', color: C.text,
+        }}
+      >
+        {/* Agent name + role */}
+        <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: agent.isOrchestrator ? C.green : C.text }}>
+              {agent.name}
+            </span>
+            {isModified && (
+              <span style={{
+                fontSize: 9, padding: '2px 5px', borderRadius: 4,
+                background: `${C.blue}18`, color: C.blue,
+                border: `1px solid ${C.blue}30`, fontWeight: 700, letterSpacing: '0.05em',
+              }}>MODIFIED</span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {agent.role}
+          </div>
+        </div>
+
+        {/* Current model indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: currentModel.color }} />
+          <span style={{ fontSize: 12, color: C.textMuted, fontFamily: 'monospace' }}>{currentModel.label}</span>
+          {open ? <ChevronUp size={13} color={C.textMuted} /> : <ChevronDown size={13} color={C.textMuted} />}
+        </div>
+      </button>
+
+      {/* Expanded picker */}
+      {open && (
+        <div style={{ padding: '0 14px 14px', borderTop: `1px solid ${C.border}` }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 12 }}>
+            {AVAILABLE_MODELS.map(m => {
+              const isSelected = selectedModel === m.id;
+              const isRec = m.id === agent.recommendedModel;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => onChange(m.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 12px', borderRadius: 7, cursor: 'pointer',
+                    border: `1px solid ${isSelected ? m.color + '60' : C.border}`,
+                    background: isSelected ? `${m.color}12` : C.surface,
+                    transition: 'all 0.12s',
+                    minWidth: 140,
+                  }}
+                >
+                  <div style={{
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: isSelected ? m.color : C.textDim,
+                    boxShadow: isSelected ? `0 0 5px ${m.color}` : 'none',
+                    flexShrink: 0,
+                  }} />
+                  <div style={{ textAlign: 'left', flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: isSelected ? 700 : 400, color: isSelected ? C.text : C.textMuted }}>
+                      {m.fullLabel}
+                    </div>
+                    <div style={{ fontSize: 10, color: isSelected ? m.color : C.textDim, marginTop: 1 }}>
+                      {m.costPer1k} / 1k tokens
+                    </div>
+                  </div>
+                  {isRec && (
+                    <span style={{
+                      fontSize: 9, padding: '2px 5px', borderRadius: 4, flexShrink: 0,
+                      background: `${C.green}15`, color: C.green,
+                      border: `1px solid ${C.green}30`, fontWeight: 700, letterSpacing: '0.04em',
+                    }}>REC</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 10, fontSize: 11, color: C.textMuted }}>
+            {currentModel.description}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentModelCard() {
+  const [selections, setSelections] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    fetch(`${BACKEND}/api/config/agent_model_config`)
+      .then(r => r.json())
+      .then(d => setSelections(d.value ?? { ...AGENT_MODEL_DEFAULTS }))
+      .catch(() => setSelections({ ...AGENT_MODEL_DEFAULTS }));
+  }, []);
+
+  const handleChange = (agentId, modelId) => {
+    setSelections(prev => ({ ...prev, [agentId]: modelId }));
+    setStatus(null);
+  };
+
+  const handleReset = () => {
+    setSelections({ ...AGENT_MODEL_DEFAULTS });
+    setStatus(null);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setStatus(null);
+    try {
+      const r = await fetch(`${BACKEND}/api/config/agent_model_config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: selections }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setStatus({ type: 'ok', msg: 'Saved — takes effect on next deliberation' });
+    } catch (e) {
+      setStatus({ type: 'err', msg: 'Save failed: ' + e.message });
+    }
+    setSaving(false);
+    setTimeout(() => setStatus(null), 3500);
+  };
+
+  if (!selections) return null;
+
+  const modifiedCount = Object.entries(selections).filter(([id, m]) => m !== AGENT_MODEL_DEFAULTS[id]).length;
+
+  // Rough daily cost estimate: 20 deliberations/day, ~500 tokens/agent/call
+  const dailyCostEst = (() => {
+    const callsPerDay = 20;
+    const tokensPerCall = 500;
+    let total = 0;
+    AGENT_DEFS.forEach(agent => {
+      const model = AVAILABLE_MODELS.find(m => m.id === selections[agent.id]);
+      if (model) total += (tokensPerCall / 1000) * parseFloat(model.costPer1k.replace('$', '')) * callsPerDay;
+    });
+    return total.toFixed(3);
+  })();
+
+  const orchestrator = AGENT_DEFS.find(a => a.isOrchestrator);
+  const specialists = AGENT_DEFS.filter(a => !a.isOrchestrator);
+
+  return (
+    <ConfigCard
+      icon={Cpu}
+      title="Agent Model Configuration"
+      description="Assign a Claude model to each agent. Click an agent to expand. REC = recommended default."
+    >
+      {/* Cost estimate + modified badge */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 14px', borderRadius: 8,
+        background: C.surface2, border: `1px solid ${C.border}`,
+        marginBottom: 16, flexWrap: 'wrap', gap: 8,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 10, color: C.textMuted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Est. Daily API Cost</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.green, marginTop: 2 }}>~${dailyCostEst}</div>
+          </div>
+          <div style={{ width: 1, height: 32, background: C.border }} />
+          <div style={{ fontSize: 11, color: C.textMuted }}>
+            Based on 20 deliberations/day · 500 tokens/call
+          </div>
+        </div>
+        {modifiedCount > 0 && (
+          <span style={{
+            fontSize: 10, padding: '4px 10px', borderRadius: 6,
+            background: `${C.amber}15`, color: C.amber,
+            border: `1px solid ${C.amber}30`, fontWeight: 700, letterSpacing: '0.05em',
+          }}>
+            {modifiedCount} AGENT{modifiedCount !== 1 ? 'S' : ''} MODIFIED
+          </span>
+        )}
+      </div>
+
+      {/* Orchestrator */}
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
+        Orchestrator
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <AgentModelRow
+          agent={orchestrator}
+          selectedModel={selections[orchestrator.id]}
+          onChange={m => handleChange(orchestrator.id, m)}
+          isModified={selections[orchestrator.id] !== AGENT_MODEL_DEFAULTS[orchestrator.id]}
+        />
+      </div>
+
+      <div style={{ height: 1, background: C.border, marginBottom: 16 }} />
+
+      {/* Specialist agents */}
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
+        Specialist Agents
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {specialists.map(agent => (
+          <AgentModelRow
+            key={agent.id}
+            agent={agent}
+            selectedModel={selections[agent.id]}
+            onChange={m => handleChange(agent.id, m)}
+            isModified={selections[agent.id] !== AGENT_MODEL_DEFAULTS[agent.id]}
+          />
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          {status && (
+            <span style={{ fontSize: 12, color: status.type === 'ok' ? C.green : C.red }}>
+              {status.msg}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleReset} style={{
+            padding: '8px 14px', borderRadius: 8, border: `1px solid ${C.border}`,
+            background: 'none', color: C.textMuted, fontSize: 12, cursor: 'pointer',
+          }}>
+            ↺ Reset to Recommended
+          </button>
+          <button onClick={handleSave} disabled={saving} style={{
+            padding: '8px 20px', borderRadius: 8, border: 'none', cursor: saving ? 'default' : 'pointer',
+            background: C.blue, color: '#000', fontSize: 12, fontWeight: 800,
+            opacity: saving ? 0.7 : 1,
+          }}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </ConfigCard>
+  );
+}
+
 export default function Settings() {
   return (
     <div style={{ padding: '24px', maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -945,6 +1283,9 @@ export default function Settings() {
 
       {/* Trading Universe editor */}
       <TradingUniverseCard />
+
+      {/* Agent Model Configuration */}
+      <AgentModelCard />
 
       {/* Stop Loss / Take Profit config */}
       <SlTpCard />

@@ -30,6 +30,10 @@ if (missing.length > 0) {
 
 console.log('[startup] Environment variables validated \u2713');
 
+
+// ── Load dynamic model overrides from Supabase ────────────────────────────────
+const { loadModelOverrides } = require('./config/models.js');
+(async () => { await loadModelOverrides(); console.log('[startup] Model configuration loaded ✓'); })();
 // Detect and log broker execution mode
 const hasTestnet = !!(
   process.env.BINANCE_TESTNET === 'true' &&
