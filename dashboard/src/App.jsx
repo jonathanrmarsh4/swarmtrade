@@ -83,7 +83,6 @@ function ConnectionStatus({ count, status }) {
       {/* Floating analyst — always mounted, appears over everything */}
       <Analyst />
     </div>
-    </TimezoneProvider>
   );
 }
 
@@ -114,7 +113,6 @@ function SystemBar({ signalCount, signalStatus }) {
       {/* Floating analyst — always mounted, appears over everything */}
       <Analyst />
     </div>
-    </TimezoneProvider>
   );
 }
 
