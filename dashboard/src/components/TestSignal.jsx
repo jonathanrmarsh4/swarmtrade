@@ -41,6 +41,17 @@ function Select({ label, value, onChange, options }) {
       </select>
     </div>
   );
+
+  if (embedded) return inner;
+
+  return (
+    <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 12, padding: '20px',
+    }}>
+      {inner}
+    </div>
+  );
 }
 
 function FireButton({ direction, onClick, loading }) {
@@ -68,7 +79,7 @@ function FireButton({ direction, onClick, loading }) {
   );
 }
 
-export default function TestSignal() {
+export default function TestSignal({ embedded = false }) {
   const [asset,      setAsset]      = useState('BTCUSDT');
   const [timeframe,  setTimeframe]  = useState('60');
   const [signalType, setSignalType] = useState('macd_crossover');
@@ -112,29 +123,26 @@ export default function TestSignal() {
     }
   }
 
-  return (
-    <div style={{
-      background: C.surface, border: `1px solid ${C.border}`,
-      borderRadius: 12, padding: '20px',
-      display: 'flex', flexDirection: 'column', gap: 16,
-    }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}><FlaskConical size={14} color={C.blue} /> Test Signal</h3>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: C.textMuted }}>
-            Fire a manual signal to trigger the swarm — no terminal needed
-          </p>
+  const inner = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Header — only shown when not embedded (standalone mode) */}
+      {!embedded && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: C.text, display: 'flex', alignItems: 'center', gap: 6 }}><FlaskConical size={14} color={C.blue} /> Test Signal</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: C.textMuted }}>
+              Fire a manual signal to trigger the swarm — no terminal needed
+            </p>
+          </div>
+          <span style={{
+            fontSize: 10, fontWeight: 700, color: C.amber,
+            background: `${C.amber}18`, border: `1px solid ${C.amber}40`,
+            borderRadius: 20, padding: '3px 10px', letterSpacing: '0.08em',
+          }}>
+            PAPER ONLY
+          </span>
         </div>
-        <span style={{
-          fontSize: 10, fontWeight: 700, color: C.amber,
-          background: `${C.amber}18`, border: `1px solid ${C.amber}40`,
-          borderRadius: 20, padding: '3px 10px', letterSpacing: '0.08em',
-        }}>
-          PAPER ONLY
-        </span>
-      </div>
+      )}
 
       {/* Secret input */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -197,6 +205,17 @@ export default function TestSignal() {
           )}
         </div>
       )}
+    </div>
+  );
+
+  if (embedded) return inner;
+
+  return (
+    <div style={{
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 12, padding: '20px',
+    }}>
+      {inner}
     </div>
   );
 }

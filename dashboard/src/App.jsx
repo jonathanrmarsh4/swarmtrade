@@ -4,21 +4,22 @@ import Portfolio from './components/Portfolio';
 import DeliberationLog from './components/DeliberationLog';
 import SignalHistory from './components/SignalHistory';
 import AgentReputation from './components/AgentReputation';
-import TestSignal from './components/TestSignal';
 import Scanner from './components/Scanner';
 import Analyst from './components/Analyst';
 import WarRoom from './components/WarRoom';
-import { BarChart, Brain, Radio, Bot, ScanLine, Zap } from 'lucide-react';
+import Settings from './components/Settings';
+import { BarChart, Brain, Radio, Bot, ScanLine, Zap, Settings as SettingsIcon } from 'lucide-react';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'portfolio',     label: 'Portfolio',     Icon: BarChart  },
-  { id: 'deliberations', label: 'Deliberations', Icon: Brain      },
-  { id: 'signals',       label: 'Signals',       Icon: Radio      },
-  { id: 'agents',        label: 'Agents',        Icon: Bot        },
-  { id: 'scanner',       label: 'Scanner',       Icon: ScanLine },
-  { id: 'warroom',       label: 'War Room',      Icon: Zap        },
+  { id: 'portfolio',     label: 'Portfolio',     Icon: BarChart      },
+  { id: 'deliberations', label: 'Deliberations', Icon: Brain         },
+  { id: 'signals',       label: 'Signals',       Icon: Radio         },
+  { id: 'agents',        label: 'Agents',        Icon: Bot           },
+  { id: 'scanner',       label: 'Scanner',       Icon: ScanLine      },
+  { id: 'warroom',       label: 'War Room',      Icon: Zap           },
+  { id: 'settings',      label: 'Settings',      Icon: SettingsIcon  },
 ];
 
 // ─── Connection probe ─────────────────────────────────────────────────────────
@@ -176,12 +177,13 @@ export default function App() {
       <Nav active={activeTab} onSelect={setActiveTab} />
 
       <main className="flex-1 overflow-auto bg-grid">
-        {activeTab === 'portfolio'     && <div style={{display:'flex',flexDirection:'column',gap:0}}><div style={{padding:'20px 24px 0'}}><TestSignal /></div><Portfolio /></div>}
+        {activeTab === 'portfolio'     && <Portfolio />}
         {activeTab === 'deliberations' && <DeliberationLog />}
         {activeTab === 'signals'       && <SignalHistory />}
         {activeTab === 'agents'        && <AgentReputation />}
         {activeTab === 'scanner'       && <Scanner />}
         {activeTab === 'warroom'       && <WarRoom />}
+        {activeTab === 'settings'      && <Settings />}
       </main>
       {/* Floating analyst — always mounted, appears over everything */}
       <Analyst />
