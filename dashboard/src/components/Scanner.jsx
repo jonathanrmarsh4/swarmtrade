@@ -1,4 +1,4 @@
-import { BarChart, Brain, Clock, Database, FlaskConical, Microscope, Radio, Search, TrendingDown, TrendingUp } from 'lucide-react';
+import { BarChart, Brain, Clock, Database, FlaskConical, Microscope, Radio, Search, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 // Scanner — displays market scan results and escalation status.
 // Reads from scanner_runs and scanner_results tables in Supabase.
 // Updates in real-time as new scans complete.
@@ -138,24 +138,21 @@ function NextScanCountdown() {
 
   useEffect(() => {
     function calcNext() {
-      const now  = new Date();
-      const next = new Date(now);
-      next.setMinutes(0, 0, 0);
-      next.setHours(next.getHours() + 1);
-      return Math.max(0, Math.floor((next - now) / 1000));
+      // Next 10-minute boundary (matches SCAN_INTERVAL_MS = 10 * 60 * 1000)
+      const now       = Date.now();
+      const interval  = 10 * 60 * 1000;
+      const nextMs    = Math.ceil(now / interval) * interval;
+      return Math.max(0, Math.floor((nextMs - now) / 1000));
     }
 
     setSeconds(calcNext());
-    const interval = setInterval(() => setSeconds(calcNext()), 1000);
-    return () => clearInterval(interval);
+    const timer = setInterval(() => setSeconds(calcNext()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
+  const m = Math.floor(seconds / 60);
   const s = seconds % 60;
-  const fmt = h > 0
-    ? `${h}h ${m}m`
-    : `${m}m ${String(s).padStart(2, '0')}s`;
+  const fmt = `${m}m ${String(s).padStart(2, '0')}s`;
 
   return (
     <div style={{
@@ -243,7 +240,7 @@ function AssetTable({ results }) {
       <div style={{ maxHeight: 520, overflowY: 'auto' }}>
         {filtered.length === 0 ? (
           <div style={{ padding: '32px', textAlign: 'center', color: C.textMuted, fontSize: 13 }}>
-            No results yet — scan runs every hour
+            No results yet — first scan runs on startup
           </div>
         ) : (
           filtered.map((r, i) => (
@@ -360,7 +357,7 @@ export default function Scanner() {
             Market Scanner
           </h2>
           <p style={{ margin: '6px 0 0', fontSize: 13, color: C.textMuted }}>
-            Top 100 Binance pairs by volume · Screened every hour · Best candidates escalated to swarm
+            Top 100 Binance pairs by volume · Background scan every 10 min · WebSocket monitors top 5 · Smart escalation to swarm
           </p>
         </div>
         <NextScanCountdown />
@@ -371,10 +368,10 @@ export default function Scanner() {
         display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20,
       }}>
         {[
-          { Icon: Radio,        label: 'Stage 1', desc: 'Fetch top 100 pairs by volume' },
-          { Icon: FlaskConical, label: 'Stage 2', desc: 'Screen: RSI + Volume + Breakout + MACD' },
-          { Icon: Brain,        label: 'Stage 3', desc: 'Top scorers sent to agent swarm' },
-          { Icon: Database,     label: 'Stage 4', desc: 'Results saved + dashboard updated' },
+          { Icon: Radio,        label: 'Stage 1', desc: 'Scan top 100 pairs every 10 min' },
+          { Icon: FlaskConical, label: 'Stage 2', desc: 'Build watchlist — top 5 by RSI · MACD · Volume' },
+          { Icon: Zap,          label: 'Stage 3', desc: 'WebSocket monitors live — escalates on 2 signals in 5 min' },
+          { Icon: Brain,        label: 'Stage 4', desc: 'Swarm deliberates at exact trigger moment' },
         ].map((s, i) => (
           <div key={i} style={{
             background: C.surface, border: `1px solid ${C.border}`,
@@ -402,7 +399,7 @@ export default function Scanner() {
           color: C.textMuted, fontSize: 13,
         }}>
           <div style={{ marginBottom: 12 }}><Search size={32} color='#4a7090' /></div>
-          No scans yet — first scan runs on startup, then every hour at :00
+          No scans yet — first scan runs on startup, then every 10 minutes
         </div>
       )}
 
