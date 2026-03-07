@@ -452,38 +452,42 @@ async function runBackgroundScan() {
     state.updateWatchlist(results);
     state.syncWS();
 
-    // Direct scan escalation — score >= 2 means 2+ independent indicators fired.
-    // Write signal + trigger deliberation directly WITHOUT going through _escalate()
-    // because _escalate() requires the pair to be on the watchlist (max 5 slots).
-    // We want to escalate the top scoring pairs regardless of watchlist availability.
-    for (const r of results.slice(0, 20)) {
-      if (r.score >= 1 && state.canEscalate(r.symbol)) {
-        state.cooldowns.set(r.symbol, Date.now()); // claim cooldown before async work
-        const macdSig = r.macdCross === 'bullish' ? 'bullish_crossover'
-                      : r.macdCross === 'bearish' ? 'bearish_crossover' : 'neutral';
-        console.log(`[scanner:${profile.label}] ⚡ Direct escalation — ${r.symbol} score=${r.score} RSI=${r.rsi} vol=${r.volumeRatio.toFixed(1)}x [${r.signals.join(', ')}]`);
-        (async (asset, dir, price, scanR) => {
-          try {
-            const { data, error } = await getSupabase().from('signals').insert({
-              asset: asset, direction: dir, timeframe: profile.signalTimeframe,
-              signal_type: 'scan_direct',
-              raw_payload: {
-                asset, direction: dir, price, rsi: scanR.rsi,
-                volume_ratio: scanR.volumeRatio, macd_signal: macdSig,
-                atr: scanR.atr, support: scanR.support, resistance: scanR.resistance,
-                signals: scanR.signals, trigger_types: ['scan_conviction', `score_${scanR.score}`],
-                signal_type: 'scan_direct', trading_mode: profileId,
-              },
-            }).select('id').single();
-            if (error) { console.error(`[scanner:${profile.label}] Signal write failed: ${error.message}`); return; }
-            const result = await runDeliberation(data.id);
-            console.log(`[scanner:${profile.label}] Deliberation done — ${asset} decision=${result.decision}`);
-            if (result.tradeInstruction) await executeTrade(result.tradeInstruction);
-          } catch (err) {
-            console.error(`[scanner:${profile.label}] Direct escalation error ${asset}: ${err.message}`);
-          }
-        })(r.symbol, r.direction, r.price, r);
+    // Direct scan escalation: collect eligible pairs, run deliberations SERIALLY.
+    // Previously used fire-and-forget async IIFEs — when score>=1 fires for all
+    // 10 pairs across 4 profiles simultaneously, Claude API gets hammered and
+    // calls fail silently. Now: top 3 per profile, awaited one at a time, 2s gap.
+    const eligibleForEscalation = results.filter(r => r.score >= 1 && state.canEscalate(r.symbol));
+    const toEscalate = eligibleForEscalation.slice(0, 3); // max 3 per profile per scan
+    console.log(`[scanner:${profile.label}] ${toEscalate.length} pairs eligible for deliberation`);
+
+    for (const r of toEscalate) {
+      state.cooldowns.set(r.symbol, Date.now());
+      const macdSig = r.macdCross === 'bullish' ? 'bullish_crossover'
+                    : r.macdCross === 'bearish' ? 'bearish_crossover' : 'neutral';
+      console.log(`[scanner:${profile.label}] Escalating ${r.symbol} score=${r.score} RSI=${r.rsi} vol=${r.volumeRatio.toFixed(1)}x`);
+      try {
+        const { data, error } = await getSupabase().from('signals').insert({
+          asset: r.symbol, direction: r.direction, timeframe: profile.signalTimeframe,
+          signal_type: 'scan_direct',
+          raw_payload: {
+            asset: r.symbol, direction: r.direction, price: r.price, rsi: r.rsi,
+            volume_ratio: r.volumeRatio, macd_signal: macdSig,
+            atr: r.atr, support: r.support, resistance: r.resistance,
+            signals: r.signals, trigger_types: ['scan_conviction', `score_${r.score}`],
+            signal_type: 'scan_direct', trading_mode: profileId,
+          },
+        }).select('id').single();
+        if (error) { console.error(`[scanner:${profile.label}] Signal insert failed: ${error.message}`); continue; }
+        console.log(`[scanner:${profile.label}] Signal written id=${data.id} — awaiting deliberation...`);
+        const result = await runDeliberation(data.id);
+        console.log(`[scanner:${profile.label}] Deliberation complete — ${r.symbol} decision=${result?.decision ?? 'unknown'}`);
+        if (result && result.tradeInstruction) await executeTrade(result.tradeInstruction);
+      } catch (err) {
+        console.error(`[scanner:${profile.label}] Escalation failed for ${r.symbol}: ${err.message}`);
+        console.error(err.stack);
       }
+      // 2s between deliberations — stay within Claude API rate limits
+      await new Promise(res => setTimeout(res, 2000));
     }
 
     console.log(`[scanner:${profile.label}] Watchlist (${state.watchlist.size}/${MAX_WATCHLIST_SIZE}) on ${profile.candleInterval} candles:`);
@@ -522,21 +526,31 @@ async function runBackgroundScan() {
       if (error) console.warn(`[scanner] Persist error: ${error.message}`);
     }
 
-    // Persist all watchlists
+    // Persist all watchlists — delete ALL existing rows first, then re-insert current state.
+    // Previously only upserted active pairs, so pairs that fell off the watchlist
+    // lingered in the DB forever (74 rows seen in dashboard).
+    // Now: wipe and rewrite = DB always reflects exactly what's in memory.
+    await getSupabase().from('watchlist_active').delete().neq('symbol', '__sentinel__');
+
     const expiry = new Date(Date.now() + 24*60*60*1000).toISOString();
+    const watchlistRows = [];
     for (const [profileId, state] of Object.entries(profileStates)) {
       for (const [symbol, c] of state.watchlist.entries()) {
-        const { error } = await getSupabase().from('watchlist_active').upsert({
-          symbol: `${profileId}:${symbol}`,   // namespaced key — one row per profile per symbol
+        watchlistRows.push({
+          symbol: profileId + ':' + symbol,  // namespaced key — one row per profile per symbol
           score: c.score, reasons: c.signals, price: c.price,
           direction: c.direction, expires_at: expiry,
           created_at: new Date().toISOString(),
           trading_mode: profileId,
           timeframe: TRADING_PROFILES[profileId].signalTimeframe,
-        }, { onConflict: 'symbol' });
-        if (error) console.warn(`[scanner] Watchlist upsert error: ${error.message}`);
+        });
       }
     }
+    if (watchlistRows.length) {
+      const { error } = await getSupabase().from('watchlist_active').insert(watchlistRows);
+      if (error) console.warn('[scanner] Watchlist insert error:', error.message);
+    }
+    console.log('[scanner] Watchlist synced to DB —', watchlistRows.length, 'active entries across all profiles');
   } catch (err) {
     console.warn(`[scanner] Persist error (non-fatal): ${err.message}`);
   }
