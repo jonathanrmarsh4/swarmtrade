@@ -11,13 +11,24 @@
 
 const { TRADING_PROFILES } = require('../../config/trading-profiles.js');
 
-// ── Profile-independent constants ─────────────────────────────────────────────
+// ── Default risk constants (used when system_config not available) ─────────────
+// These are the fallback values. Live values are loaded from system_config.risk_rules
+// by the orchestrator and passed into checkVeto / calculatePositionSize.
 
-const MAX_PORTFOLIO_RISK_PCT  = 0.02;   // 2% of portfolio risked per trade (all profiles)
-const MAX_CONCURRENT_POSITIONS = 3;     // hard limit on open positions
-const MAX_DRAWDOWN_PAPER       = 0.05;  // 5% drawdown stop — paper mode
-const MAX_DRAWDOWN_LIVE        = 0.03;  // 3% drawdown stop — live mode
-const MIN_RISK_REWARD_RATIO    = 1.5;   // minimum R:R across all profiles
+const RISK_DEFAULTS = {
+  maxPortfolioRiskPct:   0.02,   // 2% of portfolio risked per trade
+  maxConcurrentPositions: 3,     // hard limit on open positions
+  maxDrawdownPaper:       0.05,  // 5% drawdown stop — paper mode
+  maxDrawdownLive:        0.03,  // 3% drawdown stop — live mode
+  minRiskRewardRatio:     1.5,   // minimum R:R ratio
+};
+
+// Legacy module-level constants — kept for backward compat with any direct imports
+const MAX_PORTFOLIO_RISK_PCT   = RISK_DEFAULTS.maxPortfolioRiskPct;
+const MAX_CONCURRENT_POSITIONS = RISK_DEFAULTS.maxConcurrentPositions;
+const MAX_DRAWDOWN_PAPER       = RISK_DEFAULTS.maxDrawdownPaper;
+const MAX_DRAWDOWN_LIVE        = RISK_DEFAULTS.maxDrawdownLive;
+const MIN_RISK_REWARD_RATIO    = RISK_DEFAULTS.minRiskRewardRatio;
 
 // ── Profile-aware position sizing ─────────────────────────────────────────────
 // Max position size scales with trading profile:
@@ -49,7 +60,7 @@ function getMaxPositionPct(tradingMode) {
 // @param {number} atr
 // @param {number} entryPrice
 // @param {string} tradingMode
-function calculatePositionSize(portfolioValue, atr, entryPrice, tradingMode = 'dayTrade') {
+function calculatePositionSize(portfolioValue, atr, entryPrice, tradingMode = 'dayTrade', riskConfig = {}) {
   if (typeof portfolioValue !== 'number' || portfolioValue <= 0)
     throw new Error(`calculatePositionSize: portfolioValue must be positive, got ${portfolioValue}`);
   if (typeof atr !== 'number' || atr <= 0)
@@ -57,11 +68,15 @@ function calculatePositionSize(portfolioValue, atr, entryPrice, tradingMode = 'd
   if (typeof entryPrice !== 'number' || entryPrice <= 0)
     throw new Error(`calculatePositionSize: entryPrice must be positive, got ${entryPrice}`);
 
-  const profile        = TRADING_PROFILES[tradingMode] ?? TRADING_PROFILES.dayTrade;
-  const atrMultiplier  = profile.atrMultiplier;
-  const maxPositionPct = profile.maxPositionPct;
+  const cfg = { ...RISK_DEFAULTS, ...riskConfig };
 
-  const rawSizeUsd = (portfolioValue * MAX_PORTFOLIO_RISK_PCT) / (atr * atrMultiplier);
+  // Profile values can be overridden via riskConfig.profileOverrides
+  const baseProfile    = TRADING_PROFILES[tradingMode] ?? TRADING_PROFILES.dayTrade;
+  const profileOver    = cfg.profileOverrides?.[tradingMode] ?? {};
+  const atrMultiplier  = profileOver.atrMultiplier  ?? baseProfile.atrMultiplier;
+  const maxPositionPct = profileOver.maxPositionPct ?? baseProfile.maxPositionPct;
+
+  const rawSizeUsd = (portfolioValue * cfg.maxPortfolioRiskPct) / (atr * atrMultiplier);
   const capUsd     = portfolioValue * maxPositionPct;
 
   return parseFloat(Math.min(rawSizeUsd, capUsd).toFixed(2));
@@ -82,22 +97,26 @@ function calculatePositionSize(portfolioValue, atr, entryPrice, tradingMode = 'd
 //   asset, direction, entryPrice, stopLoss, atr, takeProfit?, tradingMode?
 //
 // @returns {{ approved: boolean, reason: string, positionSizePct: number }}
-function checkVeto(portfolioState, proposedTrade) {
+function checkVeto(portfolioState, proposedTrade, riskConfig = {}) {
   const { openPositions, currentDrawdownPct, portfolioValue, mode } = portfolioState;
   const { asset, direction, entryPrice, stopLoss, atr, takeProfit, tradingMode = 'dayTrade' } = proposedTrade;
 
+  const cfg     = { ...RISK_DEFAULTS, ...riskConfig };
   const profile = TRADING_PROFILES[tradingMode] ?? TRADING_PROFILES.dayTrade;
+  const profileOver    = cfg.profileOverrides?.[tradingMode] ?? {};
+  const atrMultiplier  = profileOver.atrMultiplier  ?? profile.atrMultiplier;
+  const maxPositionPct = profileOver.maxPositionPct ?? profile.maxPositionPct;
 
   // ── Rule 1: Max concurrent positions ───────────────────────────────────────
-  if (openPositions >= MAX_CONCURRENT_POSITIONS) {
+  if (openPositions >= cfg.maxConcurrentPositions) {
     return {
       approved: false, positionSizePct: 0,
-      reason: `Max concurrent positions reached: ${openPositions}/${MAX_CONCURRENT_POSITIONS}. No new trades until an existing position closes.`,
+      reason: `Max concurrent positions reached: ${openPositions}/${cfg.maxConcurrentPositions}. No new trades until an existing position closes.`,
     };
   }
 
   // ── Rule 2: Drawdown hard stop ──────────────────────────────────────────────
-  const drawdownThreshold = mode === 'live' ? MAX_DRAWDOWN_LIVE : MAX_DRAWDOWN_PAPER;
+  const drawdownThreshold = mode === 'live' ? cfg.maxDrawdownLive : cfg.maxDrawdownPaper;
   if (currentDrawdownPct >= drawdownThreshold) {
     return {
       approved: false, positionSizePct: 0,
@@ -118,26 +137,27 @@ function checkVeto(portfolioState, proposedTrade) {
     }
 
     const rrRatio = rewardPerUnit / riskPerUnit;
-    if (rrRatio < MIN_RISK_REWARD_RATIO) {
+    if (rrRatio < cfg.minRiskRewardRatio) {
       return {
         approved: false, positionSizePct: 0,
-        reason: `R:R of ${rrRatio.toFixed(2)}:1 on ${asset} (${profile.label}) falls below minimum ${MIN_RISK_REWARD_RATIO}:1.`,
+        reason: `R:R of ${rrRatio.toFixed(2)}:1 on ${asset} (${profile.label}) falls below minimum ${cfg.minRiskRewardRatio}:1.`,
       };
     }
   }
 
   // ── Approved ────────────────────────────────────────────────────────────────
-  const positionSizeUsd = calculatePositionSize(portfolioValue, atr, entryPrice, tradingMode);
+  const positionSizeUsd = calculatePositionSize(portfolioValue, atr, entryPrice, tradingMode, cfg);
   const positionSizePct = parseFloat(((positionSizeUsd / portfolioValue) * 100).toFixed(4));
 
   return {
     approved: true,
     positionSizePct,
-    reason: `Approved [${profile.label}]. Size: ${positionSizePct}% ($${positionSizeUsd}) · ATR×${profile.atrMultiplier} · Max: ${(profile.maxPositionPct * 100).toFixed(0)}% · Drawdown: ${(currentDrawdownPct * 100).toFixed(2)}% / ${(drawdownThreshold * 100).toFixed(0)}% · Positions: ${openPositions + 1}/${MAX_CONCURRENT_POSITIONS}`,
+    reason: `Approved [${profile.label}]. Size: ${positionSizePct}% ($${positionSizeUsd}) · ATR×${atrMultiplier} · Max: ${(maxPositionPct * 100).toFixed(0)}% · Drawdown: ${(currentDrawdownPct * 100).toFixed(2)}% / ${(drawdownThreshold * 100).toFixed(0)}% · Positions: ${openPositions + 1}/${cfg.maxConcurrentPositions}`,
   };
 }
 
 module.exports = {
+  RISK_DEFAULTS,
   MAX_PORTFOLIO_RISK_PCT, MAX_CONCURRENT_POSITIONS,
   MAX_DRAWDOWN_PAPER, MAX_DRAWDOWN_LIVE, MIN_RISK_REWARD_RATIO,
   calculatePositionSize, checkVeto, getMaxPositionPct,

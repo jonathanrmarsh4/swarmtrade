@@ -657,6 +657,316 @@ function SlTpCard() {
   );
 }
 
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+function PctInput({ value, onChange, min = 0, max = 100, step = 0.1, label }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {label && <span style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: '0.08em' }}>{label}</span>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input
+          type="number" min={min} max={max} step={step}
+          value={(value * 100).toFixed(2)}
+          onChange={e => onChange(parseFloat(e.target.value) / 100)}
+          style={{
+            width: 70, padding: '5px 8px', background: C.bg, border: `1px solid ${C.border}`,
+            borderRadius: 6, color: C.text, fontSize: 13, fontFamily: 'monospace',
+          }}
+        />
+        <span style={{ fontSize: 12, color: C.textMuted }}>%</span>
+      </div>
+    </div>
+  );
+}
+
+function NumInput({ value, onChange, min, max, step = 1, label, suffix }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {label && <span style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: '0.08em' }}>{label}</span>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input
+          type="number" min={min} max={max} step={step}
+          value={value}
+          onChange={e => onChange(parseFloat(e.target.value))}
+          style={{
+            width: 70, padding: '5px 8px', background: C.bg, border: `1px solid ${C.border}`,
+            borderRadius: 6, color: C.text, fontSize: 13, fontFamily: 'monospace',
+          }}
+        />
+        {suffix && <span style={{ fontSize: 12, color: C.textMuted }}>{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+const PROFILE_LABELS = { intraday: 'Intraday', dayTrade: 'Day Trade', swing: 'Swing', position: 'Position' };
+const PROFILE_COLORS = { intraday: '#f59e0b', dayTrade: '#60a5fa', swing: '#a78bfa', position: '#4ade80' };
+
+// ─── Risk Gate Rules Card ─────────────────────────────────────────────────────
+
+const RISK_DEFAULTS = {
+  maxPortfolioRiskPct: 0.02,
+  maxConcurrentPositions: 3,
+  maxDrawdownPaper: 0.05,
+  maxDrawdownLive: 0.03,
+  minRiskRewardRatio: 1.5,
+  profileOverrides: {
+    intraday:  { atrMultiplier: 1.5, maxPositionPct: 0.05 },
+    dayTrade:  { atrMultiplier: 2.0, maxPositionPct: 0.07 },
+    swing:     { atrMultiplier: 2.5, maxPositionPct: 0.08 },
+    position:  { atrMultiplier: 3.0, maxPositionPct: 0.10 },
+  },
+};
+
+function RiskRulesCard() {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetch(`${BACKEND}/api/config/risk_rules`)
+      .then(r => r.json())
+      .then(d => setCfg(d.value ?? RISK_DEFAULTS))
+      .catch(() => setCfg(RISK_DEFAULTS));
+  }, []);
+
+  function set(path, val) {
+    setCfg(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const keys = path.split('.');
+      let obj = next;
+      for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
+      obj[keys[keys.length - 1]] = val;
+      return next;
+    });
+  }
+
+  async function save() {
+    setSaving(true); setError(null);
+    try {
+      const r = await fetch(`${BACKEND}/api/config/risk_rules`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: cfg }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  }
+
+  if (!cfg) return (
+    <ConfigCard icon={Shield} title="Risk Gate Rules" description="Loading…">
+      <div style={{ color: C.textMuted, fontSize: 13 }}>Loading configuration…</div>
+    </ConfigCard>
+  );
+
+  return (
+    <ConfigCard icon={Shield} title="Risk Gate Rules"
+      description="Deterministic hard limits applied before every trade — no LLM, no hallucination">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Global limits */}
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 12 }}>
+            GLOBAL LIMITS
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 14 }}>
+            <PctInput label="Portfolio Risk / Trade" value={cfg.maxPortfolioRiskPct}
+              onChange={v => set('maxPortfolioRiskPct', v)} min={0.1} max={10} step={0.1} />
+            <PctInput label="Drawdown Stop (Paper)" value={cfg.maxDrawdownPaper}
+              onChange={v => set('maxDrawdownPaper', v)} min={1} max={30} step={0.5} />
+            <PctInput label="Drawdown Stop (Live)" value={cfg.maxDrawdownLive}
+              onChange={v => set('maxDrawdownLive', v)} min={1} max={20} step={0.5} />
+            <NumInput label="Max Concurrent Positions" value={cfg.maxConcurrentPositions}
+              onChange={v => set('maxConcurrentPositions', Math.round(v))} min={1} max={10} step={1} />
+            <NumInput label="Min Risk:Reward" value={cfg.minRiskRewardRatio}
+              onChange={v => set('minRiskRewardRatio', v)} min={0.5} max={5} step={0.1} suffix="×" />
+          </div>
+        </div>
+
+        {/* Per-profile position sizing */}
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 12 }}>
+            POSITION SIZING BY PROFILE
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {Object.keys(PROFILE_LABELS).map(pid => {
+              const over = cfg.profileOverrides?.[pid] ?? {};
+              return (
+                <div key={pid} style={{
+                  display: 'grid', gridTemplateColumns: '110px 1fr 1fr',
+                  alignItems: 'center', gap: 14,
+                  padding: '10px 14px', background: C.bg,
+                  borderRadius: 8, border: `1px solid ${C.border}`,
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: PROFILE_COLORS[pid] }}>
+                    {PROFILE_LABELS[pid]}
+                  </span>
+                  <NumInput label="ATR Multiplier" value={over.atrMultiplier ?? 2.0}
+                    onChange={v => set(`profileOverrides.${pid}.atrMultiplier`, v)}
+                    min={0.5} max={8} step={0.1} suffix="×" />
+                  <PctInput label="Max Position Size" value={over.maxPositionPct ?? 0.07}
+                    onChange={v => set(`profileOverrides.${pid}.maxPositionPct`, v)}
+                    min={1} max={50} step={0.5} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Save row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={save} disabled={saving} style={{
+            padding: '8px 20px', borderRadius: 8, border: 'none', cursor: saving ? 'default' : 'pointer',
+            background: saved ? C.green : C.blue, color: '#fff', fontWeight: 700, fontSize: 13,
+            opacity: saving ? 0.7 : 1,
+          }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Risk Rules'}
+          </button>
+          {error && <span style={{ fontSize: 12, color: C.red }}>{error}</span>}
+          <span style={{ fontSize: 11, color: C.textMuted, marginLeft: 'auto' }}>
+            Changes take effect on next deliberation
+          </span>
+        </div>
+      </div>
+    </ConfigCard>
+  );
+}
+
+// ─── Scanner Configuration Card ───────────────────────────────────────────────
+
+const SCANNER_DEFAULTS = {
+  scanIntervalMinutes: 10,
+  escalationCooldownMinutes: 30,
+  topNCandidates: 3,
+  minScoreToEscalate: 1,
+  profileOverrides: {
+    intraday:  { rsiOversold: 35, rsiOverbought: 65, volumeSpikeMult: 1.5 },
+    dayTrade:  { rsiOversold: 30, rsiOverbought: 70, volumeSpikeMult: 2.0 },
+    swing:     { rsiOversold: 30, rsiOverbought: 70, volumeSpikeMult: 2.0 },
+    position:  { rsiOversold: 25, rsiOverbought: 75, volumeSpikeMult: 3.0 },
+  },
+};
+
+function ScannerConfigCard() {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetch(`${BACKEND}/api/config/scanner_config`)
+      .then(r => r.json())
+      .then(d => setCfg(d.value ?? SCANNER_DEFAULTS))
+      .catch(() => setCfg(SCANNER_DEFAULTS));
+  }, []);
+
+  function set(path, val) {
+    setCfg(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const keys = path.split('.');
+      let obj = next;
+      for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
+      obj[keys[keys.length - 1]] = val;
+      return next;
+    });
+  }
+
+  async function save() {
+    setSaving(true); setError(null);
+    try {
+      const r = await fetch(`${BACKEND}/api/config/scanner_config`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: cfg }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  }
+
+  if (!cfg) return (
+    <ConfigCard icon={ScanLine} title="Scanner Configuration" description="Loading…">
+      <div style={{ color: C.textMuted, fontSize: 13 }}>Loading configuration…</div>
+    </ConfigCard>
+  );
+
+  return (
+    <ConfigCard icon={ScanLine} title="Scanner Configuration"
+      description="Market scanning behaviour — thresholds, timing, and signal escalation rules">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Global scanner settings */}
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 12 }}>
+            GLOBAL SCANNER
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14 }}>
+            <NumInput label="Scan Interval" value={cfg.scanIntervalMinutes}
+              onChange={v => set('scanIntervalMinutes', Math.round(v))} min={1} max={60} step={1} suffix="min" />
+            <NumInput label="Escalation Cooldown" value={cfg.escalationCooldownMinutes}
+              onChange={v => set('escalationCooldownMinutes', Math.round(v))} min={1} max={240} step={5} suffix="min" />
+            <NumInput label="Top N Candidates" value={cfg.topNCandidates}
+              onChange={v => set('topNCandidates', Math.round(v))} min={1} max={10} step={1} suffix="pairs" />
+            <NumInput label="Min Score to Escalate" value={cfg.minScoreToEscalate}
+              onChange={v => set('minScoreToEscalate', Math.round(v))} min={1} max={5} step={1} suffix="pts" />
+          </div>
+        </div>
+
+        {/* Per-profile signal thresholds */}
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.1em', marginBottom: 12 }}>
+            SIGNAL THRESHOLDS BY PROFILE
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {Object.keys(PROFILE_LABELS).map(pid => {
+              const over = cfg.profileOverrides?.[pid] ?? {};
+              return (
+                <div key={pid} style={{
+                  display: 'grid', gridTemplateColumns: '110px 1fr 1fr 1fr',
+                  alignItems: 'center', gap: 14,
+                  padding: '10px 14px', background: C.bg,
+                  borderRadius: 8, border: `1px solid ${C.border}`,
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: PROFILE_COLORS[pid] }}>
+                    {PROFILE_LABELS[pid]}
+                  </span>
+                  <NumInput label="RSI Oversold" value={over.rsiOversold ?? 30}
+                    onChange={v => set(`profileOverrides.${pid}.rsiOversold`, Math.round(v))}
+                    min={10} max={45} step={1} />
+                  <NumInput label="RSI Overbought" value={over.rsiOverbought ?? 70}
+                    onChange={v => set(`profileOverrides.${pid}.rsiOverbought`, Math.round(v))}
+                    min={55} max={90} step={1} />
+                  <NumInput label="Volume Spike" value={over.volumeSpikeMult ?? 2.0}
+                    onChange={v => set(`profileOverrides.${pid}.volumeSpikeMult`, v)}
+                    min={1} max={10} step={0.1} suffix="×" />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Save row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={save} disabled={saving} style={{
+            padding: '8px 20px', borderRadius: 8, border: 'none', cursor: saving ? 'default' : 'pointer',
+            background: saved ? C.green : C.blue, color: '#fff', fontWeight: 700, fontSize: 13,
+            opacity: saving ? 0.7 : 1,
+          }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Scanner Config'}
+          </button>
+          {error && <span style={{ fontSize: 12, color: C.red }}>{error}</span>}
+          <span style={{ fontSize: 11, color: C.textMuted, marginLeft: 'auto' }}>
+            Scanner picks up changes on next scan cycle
+          </span>
+        </div>
+      </div>
+    </ConfigCard>
+  );
+}
+
 export default function Settings() {
   return (
     <div style={{ padding: '24px', maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -717,34 +1027,9 @@ export default function Settings() {
         </div>
       </ConfigCard>
 
-      {/* Scanner config */}
-      <ConfigCard
-        icon={Clock}
-        title="Scanner Configuration"
-        description="Live WebSocket monitor settings — read-only, edit in market-scanner.js"
-      >
-        <InfoRow label="Scan interval"       value="Every 10 minutes" />
-        <InfoRow label="Watchlist size"       value="Top 5 pairs" />
-        <InfoRow label="WebSocket streams"    value="Max 5 concurrent (Binance 1m klines)" />
-        <InfoRow label="Escalation trigger"   value="2 distinct conditions within 5-min window" />
-        <InfoRow label="Conditions monitored" value="RSI threshold · Volume spike · Price breakout" />
-        <InfoRow label="Escalation cooldown"  value="30 minutes per pair" />
-        <InfoRow label="Min score to watch"   value="Score ≥ 1 on 1h candle screen" />
-      </ConfigCard>
+      <ScannerConfigCard />
 
-      {/* Risk rules */}
-      <ConfigCard
-        icon={Shield}
-        title="Risk Gate Rules"
-        description="Deterministic hard limits — no LLM involved, edit in agents/risk/rules.js"
-      >
-        <InfoRow label="Max portfolio risk per trade" value="2%" />
-        <InfoRow label="Max concurrent positions"     value="3" />
-        <InfoRow label="Drawdown stop (paper)"        value="5%" />
-        <InfoRow label="Min risk:reward ratio"        value="1.5×" />
-        <InfoRow label="Max position size"            value="10% of portfolio" />
-        <InfoRow label="Mode"                         value="PAPER TRADING" />
-      </ConfigCard>
+      <RiskRulesCard />
 
     </div>
   );

@@ -23,8 +23,8 @@ const { TRADING_PROFILES, ALL_PROFILE_IDS } = require('../config/trading-profile
 
 // Trading universe defined below in TRADING_UNIVERSE — TOP_N_ASSETS no longer used
 const MAX_WATCHLIST_SIZE     = 5;
-const SCAN_INTERVAL_MS       = 10 * 60 * 1000;   // 10 min — all profiles scan together
-const ESCALATION_COOLDOWN_MS = 30 * 60 * 1000;   // 30 min per pair per profile
+const SCAN_INTERVAL_MS       = 10 * 60 * 1000;   // default — overridden by system_config at runtime
+const ESCALATION_COOLDOWN_MS = 30 * 60 * 1000;   // default — overridden by system_config at runtime
 const SIGNALS_REQUIRED       = 2;
 const WS_RECONNECT_DELAY_MS  = 5_000;
 const BINANCE_WS_BASE        = 'wss://stream.binance.com:9443/ws';
@@ -169,7 +169,37 @@ async function loadTradingUniverse() {
 }
 
 async function fetchTopPairs() {
-  const universe = await loadTradingUniverse(); // reads from system_config, falls back to defaults
+// ── loadScannerConfig ─────────────────────────────────────────────────────────
+// Reads scanner_config from system_config; returns defaults if unavailable.
+const SCANNER_CONFIG_DEFAULTS = {
+  scanIntervalMinutes:       10,
+  escalationCooldownMinutes: 30,
+  topNCandidates:            3,
+  minScoreToEscalate:        1,
+  profileOverrides: {
+    intraday:  { rsiOversold: 35, rsiOverbought: 65, volumeSpikeMult: 1.5 },
+    dayTrade:  { rsiOversold: 30, rsiOverbought: 70, volumeSpikeMult: 2.0 },
+    swing:     { rsiOversold: 30, rsiOverbought: 70, volumeSpikeMult: 2.0 },
+    position:  { rsiOversold: 25, rsiOverbought: 75, volumeSpikeMult: 3.0 },
+  },
+};
+
+async function loadScannerConfig() {
+  try {
+    const { data, error } = await getSupabase()
+      .from('system_config').select('value').eq('key', 'scanner_config').single();
+    if (!error && data?.value) {
+      return { ...SCANNER_CONFIG_DEFAULTS, ...data.value };
+    }
+  } catch { /* fall through */ }
+  return SCANNER_CONFIG_DEFAULTS;
+}
+
+  const universe     = await loadTradingUniverse(); // reads from system_config, falls back to defaults
+  const scannerCfg   = await loadScannerConfig();
+  const cooldownMs   = scannerCfg.escalationCooldownMinutes * 60 * 1000;
+  const topN         = scannerCfg.topNCandidates;
+  const minScore     = scannerCfg.minScoreToEscalate;
   const symbols = JSON.stringify(universe);
   const url = 'https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(symbols);
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
@@ -458,7 +488,7 @@ async function runBackgroundScan() {
 
     console.log(`[scanner:${profile.label}] Watchlist (${state.watchlist.size}/${MAX_WATCHLIST_SIZE}) on ${profile.candleInterval} candles:`);
     for (const [sym, c] of state.watchlist.entries()) {
-      const cd = ESCALATION_COOLDOWN_MS - (Date.now() - (state.cooldowns.get(sym) ?? 0));
+      const cd = cooldownMs - (Date.now() - (state.cooldowns.get(sym) ?? 0));
       const cdStr = cd > 0 ? `cooldown ${Math.round(cd/60000)}min` : 'ready';
       console.log(`  ${sym.padEnd(14)} score=${c.score} ${c.direction} RSI=${c.rsi} [${cdStr}]`);
     }
@@ -469,8 +499,9 @@ async function runBackgroundScan() {
   // across all profiles and deliberate those only — hard cap of 3 Claude API
   // call chains per scan cycle regardless of how many pairs scored.
   allCandidates.sort((a, b) => b.score - a.score);
-  const toDeliberate = allCandidates.slice(0, 3);
-  console.log(`\n[scanner] === Global top-${toDeliberate.length} candidates for deliberation ===`);
+  const eligible     = allCandidates.filter(c => c.score >= minScore);
+  const toDeliberate = eligible.slice(0, topN);
+  console.log(`\n[scanner] === Global top-${toDeliberate.length}/${eligible.length} eligible candidates (minScore=${minScore}, topN=${topN}) ===`);
   toDeliberate.forEach((r, i) =>
     console.log(`  ${i+1}. ${r.symbol} score=${r.score} profile=${r.profile.label} RSI=${r.rsi} dir=${r.direction} [${r.signals.join(', ')}]`)
   );

@@ -1070,8 +1070,16 @@ async function runDeliberation(signalId) {
       mode:               portfolioSnapshot.mode,
     };
 
+    // Load risk config from system_config (falls back to hardcoded defaults in rules.js)
+    let riskConfig = {};
     try {
-      riskVerdict = risk.evaluate(riskPortfolioState, proposedTrade);
+      const { data: cfgRow } = await getSupabase()
+        .from('system_config').select('value').eq('key', 'risk_rules').single();
+      if (cfgRow?.value) riskConfig = cfgRow.value;
+    } catch { /* use defaults */ }
+
+    try {
+      riskVerdict = risk.evaluate(riskPortfolioState, proposedTrade, riskConfig);
       riskVerdict.entryPrice = proposedTrade.entryPrice ?? null;
     } catch (err) {
       // Input validation error from the Risk Agent — treat as a veto.

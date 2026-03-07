@@ -101,7 +101,7 @@ function validateInputs(portfolioState, proposedTrade) {
 // @param {number} [proposedTrade.takeProfit]       — take profit price (enables R:R check)
 //
 // @returns {{ approved: boolean, positionSizePct: number, reason: string }}
-function evaluate(portfolioState, proposedTrade) {
+function evaluate(portfolioState, proposedTrade, riskConfig = {}) {
   validateInputs(portfolioState, proposedTrade);
 
   console.log(
@@ -113,7 +113,7 @@ function evaluate(portfolioState, proposedTrade) {
     `openPositions=${portfolioState.openPositions} mode=${portfolioState.mode}`
   );
 
-  const verdict = checkVeto(portfolioState, proposedTrade);
+  const verdict = checkVeto(portfolioState, proposedTrade, riskConfig);
 
   if (!verdict.approved) {
     console.warn(`[risk] VETO — ${verdict.reason}`);

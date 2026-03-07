@@ -183,6 +183,50 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── Generic system_config GET/POST ──────────────────────────────────────────
+  // GET  /api/config/:key  — returns { key, value }
+  // POST /api/config/:key  — body { value: <any> }, upserts and returns saved value
+  const configMatch = req.url.match(/^\/api\/config\/([\w_]+)$/);
+  if (configMatch) {
+    const key = configMatch[1];
+    const { createClient } = require('@supabase/supabase-js');
+    const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+    if (req.method === 'GET') {
+      (async () => {
+        try {
+          const { data, error } = await sb.from('system_config').select('value').eq('key', key).single();
+          if (error && error.code !== 'PGRST116') throw error;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ key, value: data?.value ?? null }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      })();
+      return;
+    }
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', async () => {
+        try {
+          const { value } = JSON.parse(body);
+          const { error } = await sb.from('system_config')
+            .upsert({ key, value }, { onConflict: 'key' });
+          if (error) throw error;
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ key, value, saved: true }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+  }
+
   // ── Portfolio balance API ────────────────────────────────────────────────────
   // GET /api/portfolio/balance
   if (req.method === 'GET' && req.url === '/api/portfolio/balance') {
