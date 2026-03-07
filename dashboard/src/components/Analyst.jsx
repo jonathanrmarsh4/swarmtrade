@@ -25,7 +25,8 @@ When the user asks how the system works, or asks for a flow diagram/schematic, y
 
 ## FLOWCHART CAPABILITY
 When asked "how does it work", "show me the flow", "draw a diagram", "show the pipeline", or similar, you MUST respond with a self-contained HTML flowchart. Output ONLY valid HTML (starting with <!DOCTYPE html>) — no markdown, no prose before or after. The HTML must:
-- Be a complete, self-contained page with embedded CSS
+- Be a complete, self-contained page with embedded CSS only — NO external resources, NO @import, NO Google Fonts, NO CDN links (they will be blocked)
+- Use system fonts: font-family: 'Courier New', monospace for labels; system-ui, sans-serif for headings
 - Use a dark theme matching the dashboard (bg: #080c14, accent: #00c8ff)
 - Show the actual pipeline steps you read from the source code — not a generic description
 - Update automatically if the source has changed (you read it fresh each time)
@@ -181,10 +182,19 @@ const C = {
 function MessageBubble({ msg }) {
   const isUser = msg.role === 'user';
 
-  // If the response is a full HTML document (flowchart), render in an iframe
+  // If the response is a full HTML document (flowchart), show a preview card
+  // that opens in a new tab — iframes block external resources (fonts/styles)
   const isHtmlFlowchart = msg.content.trim().startsWith('<!DOCTYPE') || msg.content.trim().startsWith('<html');
 
   if (isHtmlFlowchart) {
+    const openDiagram = () => {
+      const blob = new Blob([msg.content], { type: 'text/html' });
+      const url  = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      // Revoke after a short delay to allow the tab to load
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    };
+
     return (
       <div style={{
         maxWidth: '82%',
@@ -194,31 +204,35 @@ function MessageBubble({ msg }) {
         background: C.surface2,
       }}>
         <div style={{
-          padding: '8px 12px',
-          fontSize: 11, fontWeight: 700, color: C.accent,
-          borderBottom: `1px solid ${C.border}`,
-          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '14px 16px',
+          display: 'flex', flexDirection: 'column', gap: 10,
         }}>
-          ◈ Signal → Position Flow
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 18 }}>◈</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.accent }}>Signal → Position Flow</div>
+              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>
+                Generated from live source code · opens in new tab
+              </div>
+            </div>
+          </div>
           <button
-            onClick={() => {
-              const w = window.open('', '_blank');
-              w.document.write(msg.content);
-              w.document.close();
-            }}
+            onClick={openDiagram}
             style={{
-              marginLeft: 'auto', background: 'transparent',
-              border: `1px solid ${C.border}`, borderRadius: 4,
-              color: C.textMuted, fontSize: 10, padding: '2px 7px', cursor: 'pointer',
+              padding: '9px 0',
+              background: `linear-gradient(135deg, ${C.accent}22, ${C.accent}10)`,
+              border: `1px solid ${C.accent}60`,
+              borderRadius: 8,
+              color: C.accent,
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              letterSpacing: '0.04em',
             }}
-          >Open full screen</button>
+          >
+            Open Flow Diagram →
+          </button>
         </div>
-        <iframe
-          srcDoc={msg.content}
-          style={{ width: '100%', height: 520, border: 'none', display: 'block' }}
-          title="Signal Flow Diagram"
-          sandbox="allow-scripts"
-        />
       </div>
     );
   }
