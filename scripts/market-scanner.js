@@ -382,21 +382,29 @@ async function runBackgroundScan() {
     console.error(`[scanner] Fetch failed: ${err.message}`); return;
   }
 
-  // Run each profile's scan in parallel
+  // Run profiles SEQUENTIALLY to avoid Binance rate limits.
+  // 4 profiles × 100 pairs in parallel = 400 simultaneous requests → rate limited → empty results.
+  // Sequential with stagger: each profile scans top 40 pairs with 300ms between requests.
   const profileResults = {};
-  await Promise.all(ALL_PROFILE_IDS.map(async (profileId) => {
+  const TOP_PAIRS_PER_SCAN = 40; // reduce from 100 — top 40 by volume catches everything meaningful
+
+  for (const profileId of ALL_PROFILE_IDS) {
     const state   = profileStates[profileId];
     const profile = state.profile;
     const results = [];
     let n = 0;
 
-    for (const pair of pairs) {
+    console.log(`[scanner:${profile.label}] Scanning top ${TOP_PAIRS_PER_SCAN} pairs on ${profile.candleInterval}...`);
+
+    for (const pair of pairs.slice(0, TOP_PAIRS_PER_SCAN)) {
       try {
         const candles = await fetchCandles(pair.symbol, profile.candleInterval, profile.candleLimit);
         results.push(scoreAsset(pair.symbol, pair.price, candles, profile));
-        if (++n % 25 === 0) await new Promise(r => setTimeout(r, 200));
+        // 300ms between every request — well within Binance's 1200 weight/min limit
+        await new Promise(r => setTimeout(r, 300));
       } catch (err) {
         console.warn(`[scanner:${profile.label}] Skip ${pair.symbol}: ${err.message}`);
+        await new Promise(r => setTimeout(r, 500)); // longer pause after error
       }
     }
 
@@ -446,7 +454,7 @@ async function runBackgroundScan() {
       const cdStr = cd > 0 ? `cooldown ${Math.round(cd/60000)}min` : 'ready';
       console.log(`  ${sym.padEnd(14)} score=${c.score} ${c.direction} RSI=${c.rsi} [${cdStr}]`);
     }
-  }));
+  } // end for...of ALL_PROFILE_IDS
 
   // Persist scan results + watchlists to Supabase
   try {
