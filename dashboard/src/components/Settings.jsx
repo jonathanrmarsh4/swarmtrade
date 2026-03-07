@@ -74,38 +74,35 @@ function TimezoneCard() {
   const now = new Date().toISOString();
 
   return (
-    <ConfigCard
-      icon={Globe}
-      title="Timezone"
-      description="All timestamps across the dashboard will display in this timezone"
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <select
-          value={timezone}
-          onChange={e => setTimezone(e.target.value)}
-          style={{
-            flex: 1,
-            background: C.bg, border: `1px solid ${C.border}`,
-            borderRadius: 7, color: C.text, fontSize: 12,
-            padding: '8px 10px', cursor: 'pointer', outline: 'none',
-          }}
-        >
-          {TIMEZONE_GROUPS.map(group => (
-            <optgroup key={group.label} label={group.label}>
-              {group.zones.map(zone => (
-                <option key={zone.value} value={zone.value}>{zone.label}</option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <div style={{
-          fontSize: 12, color: C.blue, fontWeight: 700,
-          fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
-        }}>
-          {formatTs(now, { timeStyle: 'short' })} {tzLabel}
-        </div>
-      </div>
-    </ConfigCard>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '10px 14px',
+      background: C.surface, border: `1px solid ${C.border}`,
+      borderRadius: 10,
+    }}>
+      <Globe size={14} color={C.textMuted} style={{ flexShrink: 0 }} />
+      <span style={{ fontSize: 12, color: C.textMuted, whiteSpace: 'nowrap' }}>Timezone</span>
+      <select
+        value={timezone}
+        onChange={e => setTimezone(e.target.value)}
+        style={{
+          flex: 1, background: C.bg, border: `1px solid ${C.border}`,
+          borderRadius: 6, color: C.text, fontSize: 12,
+          padding: '5px 8px', cursor: 'pointer', outline: 'none',
+        }}
+      >
+        {TIMEZONE_GROUPS.map(group => (
+          <optgroup key={group.label} label={group.label}>
+            {group.zones.map(zone => (
+              <option key={zone.value} value={zone.value}>{zone.label}</option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      <span style={{ fontSize: 11, color: C.blue, fontWeight: 700, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+        {formatTs(now, { timeStyle: 'short' })} {tzLabel}
+      </span>
+    </div>
   );
 }
 
