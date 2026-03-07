@@ -183,6 +183,55 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── Architecture source reader ───────────────────────────────────────────────
+  // GET /api/architecture — reads key source files and returns their content
+  // so the Analyst chat can answer "how does it work" with live accuracy.
+  if (req.method === 'GET' && req.url === '/api/architecture') {
+    (async () => {
+      try {
+        const fs   = require('fs');
+        const path = require('path');
+
+        function readSafe(relPath) {
+          try { return fs.readFileSync(path.join(__dirname, relPath), 'utf8'); }
+          catch { return null; }
+        }
+
+        // Key files that define how the system works — scanner, orchestrator pipeline,
+        // risk rules, trading profiles, SL/TP config, scanner config.
+        const files = {
+          'scripts/market-scanner.js':        readSafe('scripts/market-scanner.js'),
+          'orchestrator/index.js':            readSafe('orchestrator/index.js'),
+          'orchestrator/debate.js':           readSafe('orchestrator/debate.js'),
+          'orchestrator/synthesise.js':       readSafe('orchestrator/synthesise.js'),
+          'agents/risk/rules.js':             readSafe('agents/risk/rules.js'),
+          'config/trading-profiles.js':       readSafe('config/trading-profiles.js'),
+          'config/sl-tp-config.js':           readSafe('config/sl-tp-config.js'),
+          'config/models.js':                 readSafe('config/models.js'),
+          'agents/bull/index.js':             readSafe('agents/bull/index.js'),
+          'agents/bear/index.js':             readSafe('agents/bear/index.js'),
+          'agents/macro/index.js':            readSafe('agents/macro/index.js'),
+          'agents/quant/index.js':            readSafe('agents/quant/index.js'),
+          'agents/sentiment/crowd-thermometer.js': readSafe('agents/sentiment/crowd-thermometer.js'),
+          'agents/sentiment/news-sentinel.js':     readSafe('agents/sentiment/news-sentinel.js'),
+        };
+
+        // Also pull live system_config for current thresholds
+        const { createClient } = require('@supabase/supabase-js');
+        const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+        const { data: configs } = await sb.from('system_config').select('key, value');
+        const systemConfig = Object.fromEntries((configs ?? []).map(r => [r.key, r.value]));
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ files, systemConfig }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    })();
+    return;
+  }
+
   // ── Generic system_config GET/POST ──────────────────────────────────────────
   // GET  /api/config/:key  — returns { key, value }
   // POST /api/config/:key  — body { value: <any> }, upserts and returns saved value

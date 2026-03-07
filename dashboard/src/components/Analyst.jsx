@@ -9,6 +9,10 @@ import { supabase } from '../lib/supabase';
 // ── System prompt ─────────────────────────────────────────────────────────────
 // Deep context about SwarmTrade architecture, config, and your role.
 
+// Architecture source is fetched on-demand and injected into the message.
+// This means the analyst always reads the real, current code rather than a
+// hardcoded description that goes stale across releases.
+
 const SYSTEM_PROMPT = `You are the SwarmTrade Analyst — an expert trading system diagnostician embedded directly inside the SwarmTrade dashboard.
 
 ## YOUR ROLE
@@ -17,55 +21,26 @@ You help the operator (Jon) understand what the system is doing, why it's making
 You NEVER act or make changes autonomously. You ALWAYS explain your reasoning. When you suggest a change, you describe exactly what to change and why, and wait for Jon to approve before anything happens (Phase 2 feature).
 
 ## SWARMTRADE ARCHITECTURE
+When the user asks how the system works, or asks for a flow diagram/schematic, you will receive the LIVE SOURCE CODE of all key files in the ## LIVE ARCHITECTURE SOURCE section below. Read that code directly — do not rely on memory from your training. The source is the truth.
 
-### Agent Swarm (6 agents + orchestrator)
-- **Bull Agent** — finds long opportunities, scores 0–100 (high = strong bullish case)
-- **Bear Agent** — finds risks and short setups, scores 0–100 (high = strong bearish case, shown inverted in UI)
-- **Quant Agent** — mathematical edge: expected value, Sharpe ratio, win rate from historical trades. Returns SKIP if no history yet.
-- **Macro Agent** — economic regime: risk-on / risk-off / neutral. Has veto-adjacent influence on Orchestrator.
-- **Sentiment Agent** — two sub-agents:
-  - Crowd Thermometer: Fear & Greed index + Reddit (Reddit currently blocked at datacenter IPs, non-fatal)
-  - News Sentinel: CryptoPanic (404, falling back to CoinGecko trending) every 3 minutes
-- **Risk Gate** — deterministic rules engine (NO LLM). Hard veto power. Rules:
-  - Max 2% portfolio risk per trade
-  - Max 3 concurrent open positions
-  - Max 5% drawdown (paper), 3% (live)
-  - Min 1.5× reward-to-risk ratio
-  - Max 10% position size per trade
-- **Orchestrator** — Claude Sonnet. Reads all agent outputs + debate, makes final decision: trade / hold / veto
+## FLOWCHART CAPABILITY
+When asked "how does it work", "show me the flow", "draw a diagram", "show the pipeline", or similar, you MUST respond with a self-contained HTML flowchart. Output ONLY valid HTML (starting with <!DOCTYPE html>) — no markdown, no prose before or after. The HTML must:
+- Be a complete, self-contained page with embedded CSS
+- Use a dark theme matching the dashboard (bg: #080c14, accent: #00c8ff)
+- Show the actual pipeline steps you read from the source code — not a generic description
+- Update automatically if the source has changed (you read it fresh each time)
+- Include phase labels: Market Scanning → Agent Deliberation → Risk Gate → Execution
+- Show the exact agents, round structure, scoring logic, risk rules, and thresholds from the current source
+- Be detailed enough to be genuinely useful to a developer
 
-### 3-Round Deliberation
-1. **Round 1** — all 6 agents analyse in parallel (90s timeout, 3 retries with backoff)
-2. **Round 2** — Bull and Bear read each other's Round 1 and write rebuttals
-3. **Round 3** — Orchestrator synthesises everything → decision → Risk Gate final check
+If the user asks for a "simple" or "text" explanation instead of a diagram, give prose.
 
-### Market Scanner (runs every hour at :00)
-- Fetches top 100 USDT pairs by 24h volume from Binance
-- Screens each with 4 filters on 1h candles (30 candles):
-  - RSI < 35 (oversold) or > 65 (overbought)
-  - Volume last candle > 2× 20-candle average
-  - Price at 30-candle high or low (breakout)
-  - MACD line crossed signal line on last candle
-- Score 0–4 per asset. Score ≥ 2 → escalated to full swarm
-- Max 10 escalations per scan (cost cap), 30s stagger between swarm calls
-- All 100 results saved to scanner_results table
-
-### TradingView Integration
-- Webhooks fire signals to POST /webhook/tradingview
-- Payload: asset, direction (long/short/close), timeframe, signal_type, secret
-- Signal triggers immediate deliberation pipeline
-
-### Tech Stack
-- Backend: Node.js on Railway (swarmtrade-production.up.railway.app)
-- Frontend: React/Vite/Tailwind on Railway (swarmtrade.up.railway.app)
-- Database: Supabase (Postgres) — all data stored here
-- Models: Claude Haiku for Sentiment sub-agents, Claude Sonnet for all others
-- Paper trading: Binance Testnet (spot + futures)
-
-### Known Issues (non-fatal)
-- CryptoPanic API returns 404 → CoinGecko fallback active
-- Reddit r/CryptoCurrency and r/Bitcoin return 403 (datacenter IP blocked)
-- Quant agent returns SKIP/EV=0 until enough historical trades accumulate
+## TECH STACK (stable — update if source contradicts this)
+- Backend: Node.js on Railway
+- Frontend: React/Vite on Railway  
+- Database: Supabase (Postgres)
+- Models: Claude Haiku (sentiment), Claude Sonnet (orchestrator)
+- Paper trading: Binance Testnet
 
 ## DATA YOU RECEIVE
 Before each message, live data is pulled from Supabase and injected into the conversation. Use it to give specific, grounded answers. Reference actual numbers, assets, agent scores, and dates.
@@ -154,6 +129,36 @@ async function fetchSystemSnapshot() {
   };
 }
 
+// ── Architecture fetcher ─────────────────────────────────────────────────────
+// Called only when the user asks about how the system works.
+// Returns source files + live system_config so the analyst reads real code.
+
+const BACKEND_URL = 'https://swarmtrade-production.up.railway.app';
+
+async function fetchArchitecture() {
+  try {
+    const r = await fetch(`${BACKEND_URL}/api/architecture`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+// Keywords that indicate the user wants to understand the system architecture
+const ARCHITECTURE_KEYWORDS = [
+  'how does it work', 'how it works', 'flow', 'diagram', 'schematic',
+  'pipeline', 'architecture', 'signal to position', 'end to end', 'end-to-end',
+  'walk me through', 'explain the system', 'show me how', 'flowchart',
+  'how are trades', 'how does the scanner', 'how does the swarm',
+  'how does deliberation', 'how does risk', 'how does the system',
+];
+
+function wantsArchitecture(text) {
+  const lower = text.toLowerCase();
+  return ARCHITECTURE_KEYWORDS.some(kw => lower.includes(kw));
+}
+
 // ── UI constants ──────────────────────────────────────────────────────────────
 
 const C = {
@@ -175,6 +180,48 @@ const C = {
 
 function MessageBubble({ msg }) {
   const isUser = msg.role === 'user';
+
+  // If the response is a full HTML document (flowchart), render in an iframe
+  const isHtmlFlowchart = msg.content.trim().startsWith('<!DOCTYPE') || msg.content.trim().startsWith('<html');
+
+  if (isHtmlFlowchart) {
+    return (
+      <div style={{
+        maxWidth: '82%',
+        borderRadius: '4px 14px 14px 14px',
+        border: `1px solid ${C.border}`,
+        overflow: 'hidden',
+        background: C.surface2,
+      }}>
+        <div style={{
+          padding: '8px 12px',
+          fontSize: 11, fontWeight: 700, color: C.accent,
+          borderBottom: `1px solid ${C.border}`,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          ◈ Signal → Position Flow
+          <button
+            onClick={() => {
+              const w = window.open('', '_blank');
+              w.document.write(msg.content);
+              w.document.close();
+            }}
+            style={{
+              marginLeft: 'auto', background: 'transparent',
+              border: `1px solid ${C.border}`, borderRadius: 4,
+              color: C.textMuted, fontSize: 10, padding: '2px 7px', cursor: 'pointer',
+            }}
+          >Open full screen</button>
+        </div>
+        <iframe
+          srcDoc={msg.content}
+          style={{ width: '100%', height: 520, border: 'none', display: 'block' }}
+          title="Signal Flow Diagram"
+          sandbox="allow-scripts"
+        />
+      </div>
+    );
+  }
 
   // Simple markdown-ish renderer: bold, code blocks, bullets
   function renderContent(text) {
@@ -266,10 +313,10 @@ function ThinkingDots() {
 // ── Suggested prompts ─────────────────────────────────────────────────────────
 
 const SUGGESTIONS = [
+  "Show me how the system works (flow diagram)",
   "Why is the system vetoing so many signals?",
   "Which agent has been most accurate lately?",
   "What assets is the scanner finding opportunities in?",
-  "Why might we be missing good setups?",
   "Analyse the last 10 deliberations",
   "What's the current market sentiment reading?",
 ];
@@ -315,6 +362,20 @@ export default function Analyst() {
     try {
       // Fetch live system snapshot
       const snapshot = await fetchSystemSnapshot();
+
+      // Fetch live architecture source if the question is about how the system works
+      let architectureBlock = '';
+      if (wantsArchitecture(userText)) {
+        const arch = await fetchArchitecture();
+        if (arch) {
+          const filesSummary = Object.entries(arch.files)
+            .filter(([, v]) => v)
+            .map(([k, v]) => `### ${k}\n\`\`\`javascript\n${v.slice(0, 6000)}${v.length > 6000 ? '\n// ... (truncated)' : ''}\n\`\`\``)
+            .join('\n\n');
+          const configSummary = JSON.stringify(arch.systemConfig, null, 2);
+          architectureBlock = `\n\n## LIVE ARCHITECTURE SOURCE (read this to answer the question accurately)\n\n### Live system_config (current thresholds & settings)\n\`\`\`json\n${configSummary}\n\`\`\`\n\n${filesSummary}`;
+        }
+      }
 
       // Build context injection
       const contextBlock = `
@@ -372,7 +433,7 @@ ${snapshot.reflections.slice(0,2).map(r => `- ${r.created_at?.slice(0,10)}: ${r.
           system: SYSTEM_PROMPT,
           messages: [
             ...history,
-            { role: 'user', content: contextBlock + '\n\n---\n\nUser question: ' + userText },
+            { role: 'user', content: contextBlock + architectureBlock + '\n\n---\n\nUser question: ' + userText },
           ],
         }),
       });
