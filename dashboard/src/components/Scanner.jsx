@@ -23,6 +23,81 @@ const C = {
   textFaint:  '#334155',
 };
 
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+// Hover tooltip. Wrap any element with <Tooltip text="..."><child/></Tooltip>
+function Tooltip({ text, children, width = 220, position = 'top' }) {
+  const [visible, setVisible] = useState(false);
+  const posStyles = position === 'top'
+    ? { bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)' }
+    : position === 'right'
+    ? { left: 'calc(100% + 8px)', top: '50%', transform: 'translateY(-50%)' }
+    : position === 'bottom'
+    ? { top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)' }
+    : { right: 'calc(100% + 8px)', top: '50%', transform: 'translateY(-50%)' };
+
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <div style={{
+          position: 'absolute',
+          ...posStyles,
+          width,
+          background: '#0a1628',
+          border: '1px solid #1e3a52',
+          borderRadius: 8,
+          padding: '10px 12px',
+          fontSize: 11,
+          color: '#94a3b8',
+          lineHeight: 1.55,
+          zIndex: 9999,
+          pointerEvents: 'none',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+          whiteSpace: 'normal',
+        }}>
+          {text}
+          {/* Arrow */}
+          <div style={{
+            position: 'absolute',
+            ...(position === 'top' ? { bottom: -5, left: '50%', transform: 'translateX(-50%)' }
+               : position === 'right' ? { left: -5, top: '50%', transform: 'translateY(-50%)' }
+               : position === 'bottom' ? { top: -5, left: '50%', transform: 'translateX(-50%)' }
+               : { right: -5, top: '50%', transform: 'translateY(-50%)' }),
+            width: 8, height: 8,
+            background: '#0a1628',
+            border: '1px solid #1e3a52',
+            borderRight: position === 'top' ? '1px solid #1e3a52' : 'none',
+            borderBottom: position === 'top' ? '1px solid #1e3a52' : 'none',
+            transform: position === 'top' ? 'translateX(-50%) rotate(45deg)' : 'translateY(-50%) rotate(45deg)',
+          }} />
+        </div>
+      )}
+    </span>
+  );
+}
+
+// Helper: small ⓘ icon that shows a tooltip on hover
+function InfoTip({ text, width, position }) {
+  return (
+    <Tooltip text={text} width={width} position={position}>
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: 14, height: 14, borderRadius: '50%',
+        background: '#1e3a52', border: '1px solid #2a4a64',
+        color: '#60a5fa', fontSize: 9, fontWeight: 800,
+        cursor: 'help', marginLeft: 5, flexShrink: 0,
+        lineHeight: 1,
+      }}>i</span>
+    </Tooltip>
+  );
+}
+
+
+
 function ScoreBadge({ score }) {
   const color = score >= 3 ? C.green
               : score >= 2 ? C.amber
@@ -63,16 +138,19 @@ function DirectionBadge({ direction }) {
 
 function EscalatedBadge() {
   return (
-    <span style={{
-      fontSize: 10, fontWeight: 700,
-      color: C.purple,
-      background: `${C.purple}18`,
-      border: `1px solid ${C.purple}40`,
-      borderRadius: 20,
-      padding: '2px 7px',
-    }}>
-      SWARM
-    </span>
+    <Tooltip text="This asset was sent to the AI swarm for full deliberation. All 6 agents (Bull, Bear, Macro, Quant, Sentiment, Risk) analysed it and voted on a trade decision." width={260} position="right">
+      <span style={{
+        fontSize: 10, fontWeight: 700,
+        color: C.purple,
+        background: `${C.purple}18`,
+        border: `1px solid ${C.purple}40`,
+        borderRadius: 20,
+        padding: '2px 7px',
+        cursor: 'help',
+      }}>
+        SWARM
+      </span>
+    </Tooltip>
   );
 }
 
@@ -117,16 +195,23 @@ function ScanMetaBar({ run }) {
           display: 'inline-block',
         }} />
         <span style={{ color: C.text, fontWeight: 600 }}>Last scan: {scannedAt} {tzLabel}</span>
+        <InfoTip text="The background scanner runs every 10 minutes, scoring all assets in your trading universe using RSI, MACD, volume, and support/resistance levels." />
       </div>
-      <span style={{ color: C.textMuted }}>
-        {run.total_assets} assets screened
-      </span>
-      <span style={{ color: C.purple, fontWeight: 700 }}>
-        {run.escalated} escalated to swarm
-      </span>
-      <span style={{ color: C.textMuted }}>
-        {(run.duration_ms / 1000).toFixed(1)}s
-      </span>
+      <Tooltip text="Total number of trading pairs analysed in this scan cycle across all 4 profiles (Intraday, Day Trade, Swing, Position)." width={200}>
+        <span style={{ color: C.textMuted, cursor: 'help', borderBottom: '1px dashed #334155' }}>
+          {run.total_assets} assets screened
+        </span>
+      </Tooltip>
+      <Tooltip text="Assets that scored high enough to be sent to the AI swarm for full deliberation. The swarm's 6 agents then debate and vote on whether to open a trade." width={240}>
+        <span style={{ color: C.purple, fontWeight: 700, cursor: 'help', borderBottom: `1px dashed ${C.purple}60` }}>
+          {run.escalated} escalated to swarm
+        </span>
+      </Tooltip>
+      <Tooltip text="How long the full scan cycle took to complete, including fetching candle data from Binance for all assets across all timeframes." width={200}>
+        <span style={{ color: C.textMuted, cursor: 'help' }}>
+          {(run.duration_ms / 1000).toFixed(1)}s
+        </span>
+      </Tooltip>
     </div>
   );
 }
@@ -153,12 +238,15 @@ function NextScanCountdown() {
   const fmt = `${m}m ${String(s).padStart(2, '0')}s`;
 
   return (
-    <div style={{
-      fontSize: 12, color: C.textMuted,
-      display: 'flex', alignItems: 'center', gap: 6,
-    }}>
-      Next scan in <span style={{ color: C.blue, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt}</span>
-    </div>
+    <Tooltip text="The background scanner runs on a fixed 10-minute cycle aligned to clock boundaries (e.g. :00, :10, :20). This timer shows how long until the next full scan of all assets." width={240} position="bottom">
+      <div style={{
+        fontSize: 12, color: C.textMuted,
+        display: 'flex', alignItems: 'center', gap: 6,
+        cursor: 'help',
+      }}>
+        Next scan in <span style={{ color: C.blue, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmt}</span>
+      </div>
+    </Tooltip>
   );
 }
 
@@ -225,13 +313,13 @@ function AssetTable({ results }) {
         fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
         textTransform: 'uppercase', color: C.textMuted,
       }}>
-        <span>Symbol</span>
-        <span>Score</span>
-        <span>Direction</span>
-        <span>RSI</span>
-        <span>Volume</span>
-        <span>MACD</span>
-        <span>Signals</span>
+        <Tooltip text="The trading pair. All pairs are quoted in USDT (Tether), the most liquid stablecoin on Binance." width={200} position="bottom"><span style={{cursor:'help', borderBottom:'1px dashed #334155'}}>Symbol</span></Tooltip>
+        <Tooltip text="Conviction score from 0–4. Each point represents one confirmed signal: RSI extreme, volume spike, MACD crossover, or proximity to support/resistance. Higher = stronger setup. Scores ≥1 are escalated to the watchlist." width={240} position="bottom"><span style={{cursor:'help', borderBottom:'1px dashed #334155'}}>Score</span></Tooltip>
+        <Tooltip text="Trade direction suggested by the signals. LONG = buy, expecting price to rise. SHORT = sell, expecting price to fall. Determined by which signals fired (oversold RSI → long, overbought → short)." width={240} position="bottom"><span style={{cursor:'help', borderBottom:'1px dashed #334155'}}>Direction</span></Tooltip>
+        <Tooltip text="Relative Strength Index (14-period). Measures momentum on a 0–100 scale. Below 35 = oversold (potential bounce). Above 65 = overbought (potential reversal). Mid-range = no strong signal." width={260} position="bottom"><span style={{cursor:'help', borderBottom:'1px dashed #334155'}}>RSI</span></Tooltip>
+        <Tooltip text="Volume ratio vs. 20-period average. 1× = normal. 2× = elevated. 3×+ = significant spike suggesting institutional activity or news-driven momentum. Spikes above the profile threshold add +1 to score." width={260} position="bottom"><span style={{cursor:'help', borderBottom:'1px dashed #334155'}}>Volume</span></Tooltip>
+        <Tooltip text="MACD signal line crossover. Bullish = fast line crossed above slow line (momentum turning up). Bearish = fast line crossed below (momentum turning down). Adds +1 to conviction score." width={260} position="bottom"><span style={{cursor:'help', borderBottom:'1px dashed #334155'}}>MACD</span></Tooltip>
+        <Tooltip text="The specific conditions that contributed to this asset's score — e.g. 'Near support', 'RSI oversold', 'MACD crossover'. Each signal is independently detected from candle data." width={260} position="bottom"><span style={{cursor:'help', borderBottom:'1px dashed #334155'}}>Signals</span></Tooltip>
       </div>
 
       {/* Rows */}
@@ -310,7 +398,9 @@ function RsiBar({ rsi }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: '0.06em' }}>{label}</span>
+        <Tooltip text={rsi < 30 ? "RSI below 30 = oversold. The asset has sold off hard and may be due for a bounce. Contrarian buy signal — often precedes a reversal." : rsi > 70 ? "RSI above 70 = overbought. Strong momentum but stretched — potential reversal or consolidation ahead. Useful for short setups." : "RSI between 30–70 = neutral momentum. No strong directional signal from RSI alone. Other indicators carry more weight in this range."} width={240}>
+        <span style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: '0.06em', cursor: 'help' }}>{label}</span>
+      </Tooltip>
         <span style={{ fontSize: 12, fontWeight: 700, color }}>{rsi}</span>
       </div>
       <div style={{ height: 4, borderRadius: 99, background: C.border, overflow: 'hidden' }}>
@@ -403,17 +493,19 @@ function WatchlistCard({ entry, wsConnected }) {
         borderTop: `1px solid ${C.border}`, paddingTop: 10,
       }}>
         {[
-          { label: 'RSI Cross', desc: `< ${30} or > ${70}` },
-          { label: 'Vol Spike', desc: '> 2× avg' },
-          { label: 'Breakout',  desc: 'S/R level' },
+          { label: 'RSI Cross', desc: `< ${30} or > ${70}`, tip: 'WebSocket fires when RSI on the 1-minute candle crosses below 30 (oversold) or above 70 (overbought). This is a momentum exhaustion signal suggesting a potential reversal.' },
+          { label: 'Vol Spike', desc: '> 2× avg', tip: 'WebSocket fires when the current 1-minute candle volume exceeds 2× the 10-period average. Unusual volume often precedes significant price moves and indicates institutional or news-driven activity.' },
+          { label: 'Breakout',  desc: 'S/R level', tip: 'WebSocket fires when the price moves 0.5% or more in a single 1-minute candle. This detects breakouts and momentum surges that may not yet show in RSI or volume.' },
         ].map((c, i) => (
-          <div key={i} style={{
+          <Tooltip key={i} text={c.tip} width={240} position="top">
+          <div style={{
             background: C.bg, borderRadius: 6, padding: '6px 8px',
-            border: `1px solid ${C.border}`,
+            border: `1px solid ${C.border}`, cursor: 'help',
           }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: C.blue, letterSpacing: '0.06em' }}>{c.label}</div>
             <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>{c.desc}</div>
           </div>
+          </Tooltip>
         ))}
       </div>
 
@@ -502,8 +594,9 @@ function WatchlistMonitor() {
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1, display: 'flex', alignItems: 'center' }}>
               Live 1m kline streams · Escalates to swarm when 2 conditions fire within 5 min
+              <InfoTip text="A WebSocket is a persistent real-time connection to Binance's data feed. Unlike the 10-min scanner which polls periodically, the WebSocket receives every 1-minute candle update instantly — allowing the system to react within seconds of a signal firing." width={260} />
             </div>
           </div>
         </div>
@@ -543,15 +636,17 @@ function WatchlistMonitor() {
           borderRadius: 8, display: 'flex', gap: 20,
         }}>
           {[
-            { label: 'Trigger window', value: '5 minutes' },
-            { label: 'Conditions needed', value: 'Any 2 of 3' },
-            { label: 'Cooldown per pair', value: '30 minutes' },
-            { label: 'Max streams', value: '5 concurrent' },
+            { label: 'Trigger window', value: '5 minutes', tip: 'Once the first WebSocket condition fires (e.g. RSI cross), a 5-minute countdown starts. If a second condition fires before the window closes, the asset escalates to the swarm. This prevents false signals from single one-off spikes.' },
+            { label: 'Conditions needed', value: 'Any 2 of 3', tip: 'The 3 monitored conditions are: (1) RSI crossing oversold/overbought threshold, (2) volume surge above 2× the 10-period average, (3) significant price move (0.5%+ in a single minute). Any two firing together = escalation.' },
+            { label: 'Cooldown per pair', value: '30 minutes', tip: 'After an asset is escalated to the swarm, it cannot be escalated again for 30 minutes. This prevents the system from deliberating the same asset repeatedly on the same setup. The swarm already has it covered.' },
+            { label: 'Max streams', value: '5 concurrent', tip: 'Binance limits the number of simultaneous WebSocket streams. The system keeps the top 5 highest-scoring assets from the last scan on live streams. The rest are monitored passively via the 10-min scan cycle.' },
           ].map((s, i) => (
-            <div key={i}>
+            <Tooltip key={i} text={s.tip} width={260} position="top">
+            <div style={{cursor: 'help'}}>
               <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{s.label}</div>
               <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: 2 }}>{s.value}</div>
             </div>
+            </Tooltip>
           ))}
         </div>
       )}
@@ -627,19 +722,22 @@ export default function Scanner() {
         display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20,
       }}>
         {[
-          { Icon: Radio,        label: 'Stage 1', desc: 'Scan top 100 pairs every 10 min' },
-          { Icon: FlaskConical, label: 'Stage 2', desc: 'Build watchlist — top 5 by RSI · MACD · Volume' },
-          { Icon: Zap,          label: 'Stage 3', desc: 'WebSocket monitors live — escalates on 2 signals in 5 min' },
-          { Icon: Brain,        label: 'Stage 4', desc: 'Swarm deliberates at exact trigger moment' },
+          { Icon: Radio,        label: 'Stage 1', desc: 'Scan top 100 pairs every 10 min', tip: 'Every 10 minutes, the backend fetches live price + candle data from Binance for all assets in your trading universe. Each asset is scored for RSI extremes, volume spikes, MACD crossovers, and proximity to support/resistance levels.' },
+          { Icon: FlaskConical, label: 'Stage 2', desc: 'Build watchlist — top 5 by RSI · MACD · Volume', tip: 'The top 5 highest-scoring assets are added to the WebSocket watchlist. These are the assets most likely to have a tradeable setup developing. The watchlist refreshes every scan cycle.' },
+          { Icon: Zap,          label: 'Stage 3', desc: 'WebSocket monitors live — escalates on 2 signals in 5 min', tip: 'A persistent WebSocket connection streams 1-minute candle data for all watchlisted assets. When 2 or more trigger conditions fire within a 5-minute window, the asset is immediately escalated to the swarm — no waiting for the next 10-min scan.' },
+          { Icon: Brain,        label: 'Stage 4', desc: 'Swarm deliberates at exact trigger moment', tip: '6 specialised AI agents run in parallel: Bull (upside case), Bear (downside risks), Macro (economic context), Quant (math/sizing), Sentiment (Fear & Greed + news), and Risk (position limits). The Orchestrator weighs all votes and makes the final trade/hold/veto decision.' },
         ].map((s, i) => (
-          <div key={i} style={{
-            background: C.surface, border: `1px solid ${C.border}`,
-            borderRadius: 8, padding: '12px 14px',
-          }}>
-            <div style={{ marginBottom: 4 }}><s.Icon size={16} color='#60a5fa' /></div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{s.label}</div>
-            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3, lineHeight: 1.5 }}>{s.desc}</div>
-          </div>
+          <Tooltip key={i} text={s.tip} width={260} position="bottom">
+            <div style={{
+              background: C.surface, border: `1px solid ${C.border}`,
+              borderRadius: 8, padding: '12px 14px',
+              cursor: 'help', width: '100%',
+            }}>
+              <div style={{ marginBottom: 4 }}><s.Icon size={16} color='#60a5fa' /></div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.blue, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{s.label}</div>
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3, lineHeight: 1.5 }}>{s.desc}</div>
+            </div>
+          </Tooltip>
         ))}
       </div>
 
