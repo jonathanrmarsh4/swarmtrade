@@ -365,7 +365,9 @@ const server = http.createServer((req, res) => {
         const payload = body ? JSON.parse(body) : {};
 
         // Fetch trade row
-        const { data: trade, error: tradeErr } = await getSupabase()
+        const { createClient: _cc } = require('@supabase/supabase-js');
+        const _sb = _cc(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+        const { data: trade, error: tradeErr } = await _sb
           .from('trades').select('*').eq('id', tradeId).single();
         if (tradeErr || !trade) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -382,7 +384,7 @@ const server = http.createServer((req, res) => {
         let asset     = trade.asset;
         let direction = trade.direction;
         if (!asset || !direction) {
-          const { data: delib } = await getSupabase()
+          const { data: delib } = await _sb
             .from('deliberations').select('asset, direction')
             .eq('id', trade.deliberation_id).single();
           asset     = asset     ?? delib?.asset;
