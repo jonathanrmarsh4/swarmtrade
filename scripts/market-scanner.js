@@ -120,6 +120,10 @@ function scoreAsset(symbol, price, candles, profile) {
   if (macd.crossover)               { score++; bullSignals.push('MACD crossover (bullish)'); }
   if (macd.crossunder)              { score++; bearSignals.push('MACD crossunder (bearish)'); }
 
+  // S/R proximity: price within 1.5% of a key level (high-probability reversal zone)
+  if (support    && price <= support    * 1.015) { score++; bullSignals.push(`Near support ($${support.toFixed(4)})`); }
+  if (resistance && price >= resistance * 0.985) { score++; bearSignals.push(`Near resistance ($${resistance.toFixed(4)})`); }
+
   const direction = bullSignals.length >= bearSignals.length ? 'long' : 'short';
 
   return {
@@ -439,6 +443,12 @@ async function runBackgroundScan() {
     results.sort((a, b) => b.score - a.score);
     profileResults[profileId] = results;
 
+    // Diagnostic: log top 5 scoring pairs so we can see if threshold is the problem
+    const top5 = results.slice(0, 5);
+    console.log(`[scanner:${profile.label}] Top scores: ${top5.map(r => `${r.symbol}=${r.score}(${r.rsi.toFixed(0)}rsi)`).join(' | ')}`);
+    const eligible = results.filter(r => r.score >= 1);
+    console.log(`[scanner:${profile.label}] ${eligible.length} pairs score>=1, ${results.filter(r=>r.score>=2).length} score>=2 (threshold=1)`);
+
     state.updateWatchlist(results);
     state.syncWS();
 
@@ -447,7 +457,7 @@ async function runBackgroundScan() {
     // because _escalate() requires the pair to be on the watchlist (max 5 slots).
     // We want to escalate the top scoring pairs regardless of watchlist availability.
     for (const r of results.slice(0, 20)) {
-      if (r.score >= 2 && state.canEscalate(r.symbol)) {
+      if (r.score >= 1 && state.canEscalate(r.symbol)) {
         state.cooldowns.set(r.symbol, Date.now()); // claim cooldown before async work
         const macdSig = r.macdCross === 'bullish' ? 'bullish_crossover'
                       : r.macdCross === 'bearish' ? 'bearish_crossover' : 'neutral';
