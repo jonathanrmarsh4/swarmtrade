@@ -24,7 +24,7 @@ const { createClient } = require('@supabase/supabase-js');
 // Starting portfolio value used for position size calculation.
 // When the paper wallet starts at a different value this can be overridden
 // via the INITIAL_PORTFOLIO_VALUE_USD Railway environment variable.
-const INITIAL_PORTFOLIO_VALUE_USD = Number(process.env.INITIAL_PORTFOLIO_VALUE_USD || 10_000);
+const INITIAL_PORTFOLIO_VALUE_USD = Number(process.env.INITIAL_PORTFOLIO_VALUE_USD || 5_000);
 
 // Maps deliberation direction to OctoBot action verb.
 // 'close' is represented as 'sell' because closing a long means selling.
@@ -60,6 +60,36 @@ function getSupabase() {
 // blocking the trade — a conservative USD size is better than no execution.
 
 async function fetchPortfolioValue() {
+  const isLive = process.env.SWARMTRADE_MODE === 'live';
+
+  // Live mode: use real Binance USDT balance
+  if (isLive) {
+    try {
+      const crypto    = require('crypto');
+      const apiKey    = process.env.BINANCE_TESTNET_API_KEY;
+      const apiSecret = process.env.BINANCE_TESTNET_API_SECRET;
+      const timestamp = Date.now();
+      const queryStr  = `timestamp=${timestamp}`;
+      const signature = crypto.createHmac('sha256', apiSecret).update(queryStr).digest('hex');
+      const res = await fetch(
+        `https://api.binance.com/api/v3/account?${queryStr}&signature=${signature}`,
+        { headers: { 'X-MBX-APIKEY': apiKey } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const usdt = (data.balances ?? []).find(b => b.asset === 'USDT');
+        if (usdt) {
+          const balance = parseFloat(usdt.free) + parseFloat(usdt.locked);
+          console.log(`[executor] Live Binance USDT balance: $${balance.toFixed(2)}`);
+          return Math.max(balance, 0.01);
+        }
+      }
+    } catch (err) {
+      console.warn('[executor] Binance balance fetch failed, falling back to P&L calc:', err.message);
+    }
+  }
+
+  // Paper mode (or live fallback): starting balance + closed P&L
   const { data: trades, error } = await getSupabase()
     .from('trades')
     .select('pnl_usd, exit_time');

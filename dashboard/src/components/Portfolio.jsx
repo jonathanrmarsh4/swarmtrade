@@ -632,9 +632,20 @@ function PositionRow({ trade, onClick }) {
 export default function Portfolio() {
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [balance, setBalance] = useState(null);
   const { data: trades, loading, error } = useRealtimeTable('trades', {
     orderBy: 'entry_time', ascending: false, limit: 20,
   }, refreshKey);
+
+  // Fetch portfolio balance from backend (real Binance balance in live mode)
+  useEffect(() => {
+    const load = () =>
+      fetch(`${BACKEND}/api/portfolio/balance`)
+        .then(r => r.json()).then(setBalance).catch(() => {});
+    load();
+    const id = setInterval(load, 30_000);
+    return () => clearInterval(id);
+  }, [refreshKey]);
 
   const openTrades   = trades.filter(t => t.exit_time == null);
   const closedTrades = trades.filter(t => t.exit_time != null);
@@ -658,11 +669,24 @@ export default function Portfolio() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
         gap: 12, marginBottom: 20 }}>
-        <StatTile label="Total Trades"    value={loading ? '—' : trades.length.toString()} accent />
-        <StatTile label="Open Positions"  value={loading ? '—' : openTrades.length.toString()} sub="max 3 allowed" />
-        <StatTile label="Closed P&L"      value={loading ? '—' : `${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}%`}
-          sub="sum of closed trades" color={totalPnl >= 0 ? C.green : C.red} />
-        <StatTile label="Mode" value="PAPER" sub="Phase 1 — no real capital" />
+        <StatTile
+          label="Portfolio Balance"
+          value={balance ? `$${balance.currentBalance.toLocaleString(undefined, {maximumFractionDigits: 2})}` : '—'}
+          sub={balance ? `started $${balance.startingBalance.toLocaleString()} · ${balance.source}` : 'loading…'}
+          accent
+        />
+        <StatTile
+          label="Available"
+          value={balance ? `$${balance.availableUsd.toLocaleString(undefined, {maximumFractionDigits: 2})}` : '—'}
+          sub={balance ? `$${balance.allocatedUsd.toFixed(2)} in ${balance.openPositions} open trade${balance.openPositions !== 1 ? 's' : ''}` : ''}
+        />
+        <StatTile
+          label="Realised P&L"
+          value={balance ? `${balance.closedPnlUsd >= 0 ? '+' : ''}$${balance.closedPnlUsd.toFixed(2)}` : '—'}
+          sub={balance ? `${balance.closedPnlPct >= 0 ? '+' : ''}${balance.closedPnlPct.toFixed(2)}% overall` : ''}
+          color={balance ? (balance.closedPnlUsd >= 0 ? C.green : C.red) : undefined}
+        />
+        <StatTile label="Mode" value={balance?.mode?.toUpperCase() ?? 'PAPER'} sub="Phase 1 — no real capital" />
       </div>
 
       {/* Equity curve placeholder */}

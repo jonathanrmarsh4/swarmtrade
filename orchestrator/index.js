@@ -33,7 +33,7 @@ const risk           = require('../agents/risk/index.js');
 
 // Starting portfolio value used for drawdown and sizing calculations.
 // Override via Railway env var when the paper-trading wallet is funded differently.
-const INITIAL_PORTFOLIO_VALUE_USD = Number(process.env.INITIAL_PORTFOLIO_VALUE_USD || 10_000);
+const INITIAL_PORTFOLIO_VALUE_USD = Number(process.env.INITIAL_PORTFOLIO_VALUE_USD || 5_000);
 
 const ROUND1_TIMEOUT_MS = 90_000; // 90s — accommodates 3 retry attempts (10s + 20s waits + API call time)
 
@@ -484,6 +484,39 @@ async function fetchSignal(signalId) {
 //   closedTrades:      object[],
 // }>}
 
+async function fetchBinanceBalance() {
+  // Fetches USDT balance from Binance (testnet in paper mode, live in live mode).
+  // Returns null on any failure — caller falls back to paper calculation.
+  try {
+    const isLive    = process.env.SWARMTRADE_MODE === 'live';
+    const baseUrl   = isLive
+      ? 'https://api.binance.com'
+      : 'https://testnet.binance.vision';
+    const apiKey    = process.env.BINANCE_TESTNET_API_KEY;
+    const apiSecret = process.env.BINANCE_TESTNET_API_SECRET;
+    if (!apiKey || !apiSecret) return null;
+
+    const timestamp = Date.now();
+    const queryStr  = `timestamp=${timestamp}`;
+    const crypto    = require('crypto');
+    const signature = crypto.createHmac('sha256', apiSecret).update(queryStr).digest('hex');
+
+    const res = await fetch(
+      `${baseUrl}/api/v3/account?${queryStr}&signature=${signature}`,
+      { headers: { 'X-MBX-APIKEY': apiKey } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const usdt = (data.balances ?? []).find(b => b.asset === 'USDT');
+    const balance = usdt ? parseFloat(usdt.free) + parseFloat(usdt.locked) : null;
+    console.log(`[orchestrator] Binance USDT balance: $${balance?.toFixed(2) ?? 'n/a'}`);
+    return balance;
+  } catch (err) {
+    console.warn('[orchestrator] fetchBinanceBalance failed:', err.message);
+    return null;
+  }
+}
+
 async function fetchPortfolioState() {
   const { data: allTrades, error } = await getSupabase()
     .from('trades')
@@ -492,26 +525,35 @@ async function fetchPortfolioState() {
 
   if (error) throw new Error(`[orchestrator] Failed to fetch trades: ${error.message}`);
 
-  const trades      = allTrades ?? [];
-  const openTrades  = trades.filter(t => t.exit_time == null);
+  const trades       = allTrades ?? [];
+  const openTrades   = trades.filter(t => t.exit_time == null);
   const closedTrades = trades.filter(t => t.exit_time != null);
+  const isLive       = process.env.SWARMTRADE_MODE === 'live';
 
   // Cumulative realised P&L from closed trades
   const netPnlUsd = closedTrades.reduce((sum, t) => sum + (t.pnl_usd ?? 0), 0);
 
-  // Simple peak-to-trough approximation: if we're down, express as fraction of
-  // starting capital. Capped at 1.0 so the Risk Agent never sees > 100%.
+  // For live mode: try to get real Binance balance.
+  // For paper mode: use starting balance + closed P&L (Binance testnet balance
+  //   is unreliable for sizing since testnet resets and doesn't reflect our trades).
+  let currentPortfolioValue;
+  if (isLive) {
+    const binanceBalance = await fetchBinanceBalance();
+    currentPortfolioValue = binanceBalance ?? Math.max(INITIAL_PORTFOLIO_VALUE_USD + netPnlUsd, 0.01);
+  } else {
+    currentPortfolioValue = Math.max(INITIAL_PORTFOLIO_VALUE_USD + netPnlUsd, 0.01);
+  }
+
   const currentDrawdownPct = netPnlUsd < 0
     ? Math.min(Math.abs(netPnlUsd) / INITIAL_PORTFOLIO_VALUE_USD, 1)
     : 0;
-
-  const currentPortfolioValue = Math.max(INITIAL_PORTFOLIO_VALUE_USD + netPnlUsd, 0.01);
 
   return {
     openPositions:      openTrades.length,
     currentDrawdownPct,
     portfolioValue:     currentPortfolioValue,
-    mode:               process.env.SWARMTRADE_MODE === 'live' ? 'live' : 'paper',
+    startingBalance:    INITIAL_PORTFOLIO_VALUE_USD,
+    mode:               isLive ? 'live' : 'paper',
     historicalTrades:   trades,
     openTrades,
     closedTrades,
@@ -692,9 +734,12 @@ async function finaliseDeliberation(deliberationId, decision, riskVerdict) {
 // paper-trade instructions. The exchange field is left null here — it is set
 // by the OctoBot handler once the trade is placed.
 
-async function createTradeRecord(deliberationId, signal, marketData, riskVerdict) {
+async function createTradeRecord(deliberationId, signal, marketData, riskVerdict, portfolioValue) {
+  // Use the actual portfolio value passed from the pipeline (includes P&L, live balance for live mode).
+  // Fall back to INITIAL_PORTFOLIO_VALUE_USD only if somehow not provided.
+  const effectivePortfolioValue = portfolioValue ?? INITIAL_PORTFOLIO_VALUE_USD;
   const positionSizeUsd = parseFloat(
-    ((riskVerdict.positionSizePct / 100) * INITIAL_PORTFOLIO_VALUE_USD).toFixed(2),
+    ((riskVerdict.positionSizePct / 100) * effectivePortfolioValue).toFixed(2),
   );
 
   // SL/TP from config — reads system_config.sl_tp_config from Supabase if available,
@@ -1076,7 +1121,7 @@ async function runDeliberation(signalId) {
 
   if (decision === 'trade' && riskVerdict.approved) {
     try {
-      tradeInstruction = await createTradeRecord(deliberationId, signal, marketData, riskVerdict);
+      tradeInstruction = await createTradeRecord(deliberationId, signal, marketData, riskVerdict, portfolioSnapshot.portfolioValue);
       console.log(`[orchestrator] Step 9 ✓ — trade record created, id=${tradeInstruction.tradeId}`);
     } catch (err) {
       console.error(`[orchestrator] Step 9 failed — trade record not created: ${err.message}`);
