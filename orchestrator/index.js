@@ -14,6 +14,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { AGENT_OUTPUT_SCHEMA } = require('../config/models.js');
+const { TRADING_PROFILES } = require('../config/trading-profiles.js');
 
 const bull      = require('../agents/bull/index.js');
 const bear      = require('../agents/bear/index.js');
