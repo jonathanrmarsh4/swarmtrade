@@ -123,16 +123,39 @@ function normalizeScores(r1, direction) {
 
   // Macro base score: how supportive is the macro environment for taking a trade?
   // Risk-on favours longs; risk-off favours exits/shorts.
+  // Macro score: regime adjusts support but shouldn't be a hard block.
+  // risk-off was 30 — combined with sentiment at 12 this made every long
+  // mathematically impossible. Tightened the spread: 60/50/40 instead of 70/50/30.
+  // The macro flag penalty also reduced from -15 to -10.
   let macroScore;
   if (direction === 'long') {
-    macroScore = { 'risk-on': 70, 'neutral': 50, 'risk-off': 30 }[r1.macro.regime] ?? 50;
-    // Macro flag = heightened systemic risk → pull support toward caution by 15 pts
-    if (r1.macro.flag) macroScore = Math.max(0, macroScore - 15);
-  } else {
-    // short / close: risk-off environment supports exiting or shorting
-    macroScore = { 'risk-off': 70, 'neutral': 50, 'risk-on': 30 }[r1.macro.regime] ?? 50;
-    // Macro flag still signals caution even for short/close trades
+    macroScore = { 'risk-on': 60, 'neutral': 50, 'risk-off': 40 }[r1.macro.regime] ?? 50;
     if (r1.macro.flag) macroScore = Math.max(0, macroScore - 10);
+  } else {
+    macroScore = { 'risk-off': 60, 'neutral': 50, 'risk-on': 40 }[r1.macro.regime] ?? 50;
+    if (r1.macro.flag) macroScore = Math.max(0, macroScore - 10);
+  }
+
+  // Sentiment score normalisation for longs:
+  // The raw sentiment score is the Fear & Greed index (0-100).
+  // IMPORTANT: extreme fear (score < 25) is a CONTRARIAN signal — classic
+  // accumulation conditions, not a reason to avoid longs. Direct pass-through
+  // (sentimentScore=12) was permanently anchoring the vote against every long.
+  //
+  // Instead, map sentiment to a trade-support curve:
+  //   Extreme Fear  (0-25):  score 55-65  — contrarian buy zone, mildly supportive
+  //   Fear         (26-45):  score 45-55  — cautious, roughly neutral
+  //   Neutral      (46-55):  score 55-60  — balanced, slightly supportive
+  //   Greed        (56-75):  score 35-45  — elevated risk, reduce support (trend extended)
+  //   Extreme Greed(76-100): score 20-30  — danger zone, strongly reduce support
+  //
+  // This matches the interpretation guide in the sentiment prompt itself.
+  function sentimentToLongSupport(s) {
+    if (s <= 25)  return 55 + Math.round((25 - s) / 25 * 10);  // 55-65
+    if (s <= 45)  return 45 + Math.round((45 - s) / 20 * 10);  // 45-55
+    if (s <= 55)  return 55 + Math.round((s - 45) / 10 *  5);  // 55-60
+    if (s <= 75)  return 45 - Math.round((s - 55) / 20 * 10);  // 35-45
+    return        30  - Math.round((s - 75) / 25 * 10);          // 20-30
   }
 
   if (direction === 'long') {
@@ -141,17 +164,17 @@ function normalizeScores(r1, direction) {
       bear:      100 - r1.bear.score,
       quant:     quantScore,
       macro:     macroScore,
-      sentiment: r1.sentiment.score,
+      sentiment: sentimentToLongSupport(r1.sentiment.score),
     };
   }
 
-  // short or close: directional agents invert
+  // short or close: invert the curve — extreme fear opposes shorts, extreme greed supports them
   return {
     bull:      100 - r1.bull.score,
     bear:      r1.bear.score,
     quant:     quantScore,
     macro:     macroScore,
-    sentiment: 100 - r1.sentiment.score,
+    sentiment: 100 - sentimentToLongSupport(r1.sentiment.score),
   };
 }
 

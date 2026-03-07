@@ -28,9 +28,14 @@ Vote classification rules (use the pre-computed classification provided — do n
 - contested: wide disagreement, score range > 40 points
 
 Decision rules:
-- "trade"  — majority supports the signal, no veto conditions triggered, AND either: (a) Quant EV is positive, OR (b) Quant sampleSize < 10 (bootstrap mode — insufficient trade history to compute real EV)
-- "hold"   — insufficient conviction, ambiguous picture, or mildly adverse conditions without a hard veto
+- "trade"  — majority supports the signal, no veto conditions triggered, AND either: (a) Quant EV is positive, OR (b) Quant sampleSize < 10 (bootstrap mode — insufficient trade history to compute real EV). IMPORTANT: in paper trading mode, favour "trade" over "hold" when conviction is moderate — the goal is to generate trade history for Quant calibration.
+- "hold"   — insufficient conviction, ambiguous picture, or clearly adverse conditions without a hard veto
 - "veto"   — mandatory when any veto condition below is active; overrides all other reasoning
+
+Sentiment interpretation — IMPORTANT:
+- Extreme Fear (sentiment score 0-25) is a CONTRARIAN SIGNAL. It is NOT a reason to avoid longs. It signals capitulation, potential accumulation conditions, and historically precedes recoveries. A sentiment score of 12 should be interpreted as mildly supportive of longs, not opposed.
+- Extreme Greed (sentiment score 75-100) signals danger — the market is likely overextended and reversals are more probable.
+- Only treat sentiment as strongly negative for longs when the score is in the Greed/Extreme Greed zone (55+).
 
 Mandatory veto conditions (these override all other reasoning):
 - Macro flag is active AND Bear conviction score exceeds 60
