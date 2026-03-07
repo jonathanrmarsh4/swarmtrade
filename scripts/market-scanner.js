@@ -168,7 +168,6 @@ async function loadTradingUniverse() {
   }
 }
 
-async function fetchTopPairs() {
 // ── loadScannerConfig ─────────────────────────────────────────────────────────
 // Reads scanner_config from system_config; returns defaults if unavailable.
 const SCANNER_CONFIG_DEFAULTS = {
@@ -195,6 +194,7 @@ async function loadScannerConfig() {
   return SCANNER_CONFIG_DEFAULTS;
 }
 
+async function fetchTopPairs() {
   const universe = await loadTradingUniverse();
   const symbols = JSON.stringify(universe);
   const url = 'https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(symbols);
