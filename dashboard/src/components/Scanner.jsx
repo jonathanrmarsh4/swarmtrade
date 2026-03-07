@@ -5,6 +5,7 @@ import { BarChart, Brain, Clock, Database, FlaskConical, Microscope, Radio, Sear
 
 import { useState, useEffect } from 'react';
 import { supabase, useRealtimeTable } from '../lib/supabase';
+import { useTimezone } from '../lib/timezone';
 
 const C = {
   bg:         '#0D1B2A',
@@ -96,11 +97,8 @@ function SignalPills({ signals }) {
 function ScanMetaBar({ run }) {
   if (!run) return null;
 
-  const scannedAt = new Date(run.scanned_at).toLocaleString('en-AU', {
-    timeZone: 'Australia/Perth',
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
+  const { formatTs, tzLabel } = useTimezone();
+  const scannedAt = formatTs(run.scanned_at);
 
   return (
     <div style={{
@@ -118,7 +116,7 @@ function ScanMetaBar({ run }) {
           boxShadow: `0 0 6px ${C.green}`,
           display: 'inline-block',
         }} />
-        <span style={{ color: C.text, fontWeight: 600 }}>Last scan: {scannedAt} AWST</span>
+        <span style={{ color: C.text, fontWeight: 600 }}>Last scan: {scannedAt} {tzLabel}</span>
       </div>
       <span style={{ color: C.textMuted }}>
         {run.total_assets} assets screened

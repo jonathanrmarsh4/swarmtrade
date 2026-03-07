@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { TrendingUp, TrendingDown, X, Radio, FlaskConical, Webhook,
          Wifi, ScanLine, Tv, ArrowRight, GitBranch } from 'lucide-react';
 import { useRealtimeTable, supabase } from '../lib/supabase';
+import { useTimezone } from '../lib/timezone';
 
 const C = {
   bg:        '#0D1B2A',
@@ -63,10 +64,8 @@ function OriginBadge({ signalType }) {
 function SignalRow({ signal, onNavigate }) {
   const [hovering, setHovering] = useState(false);
   const [loading,  setLoading]  = useState(false);
-
-  const ts = signal.received_at
-    ? new Date(signal.received_at).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' })
-    : '—';
+  const { formatTs } = useTimezone();
+  const ts = formatTs(signal.received_at);
 
   async function handleClick() {
     setLoading(true);

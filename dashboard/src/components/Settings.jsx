@@ -1,5 +1,6 @@
 import TestSignal from './TestSignal';
-import { Settings as SettingsIcon, FlaskConical, Webhook, Shield, Clock } from 'lucide-react';
+import { Settings as SettingsIcon, FlaskConical, Webhook, Shield, Clock, Globe, Check } from 'lucide-react';
+import { useTimezone, TIMEZONE_GROUPS, ALL_ZONES } from '../lib/timezone';
 
 const C = {
   bg:        '#0D1B2A',
@@ -58,6 +59,88 @@ function ConfigCard({ title, description, icon: Icon, children }) {
   );
 }
 
+
+// ─── Timezone selector ────────────────────────────────────────────────────────
+
+function TimezoneCard() {
+  const { timezone, setTimezone, tzLabel, formatTs } = useTimezone();
+  const selected = ALL_ZONES.find(z => z.value === timezone);
+  const now = new Date().toISOString();
+
+  return (
+    <ConfigCard
+      icon={Globe}
+      title="Timezone"
+      description="All timestamps across the dashboard — signals, deliberations, scanner — will display in this timezone"
+    >
+      {/* Current selection preview */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+        background: `${C.blue}10`, border: `1px solid ${C.blue}30`,
+      }}>
+        <div>
+          <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 2 }}>Current timezone</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+            {selected?.label ?? timezone}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 2 }}>Right now</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.blue, fontVariantNumeric: 'tabular-nums' }}>
+            {formatTs(now, { dateStyle: 'medium', timeStyle: 'short' })} {tzLabel}
+          </div>
+        </div>
+      </div>
+
+      {/* Group selector */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {TIMEZONE_GROUPS.map(group => (
+          <div key={group.label}>
+            <div style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '0.12em',
+              textTransform: 'uppercase', color: C.textMuted,
+              marginBottom: 6, paddingBottom: 4,
+              borderBottom: `1px solid ${C.border}`,
+            }}>
+              {group.label}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {group.zones.map(zone => {
+                const isActive = timezone === zone.value;
+                return (
+                  <button
+                    key={zone.value}
+                    onClick={() => setTimezone(zone.value)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 10px', borderRadius: 7, cursor: 'pointer',
+                      background: isActive ? `${C.blue}15` : 'transparent',
+                      border: `1px solid ${isActive ? C.blue + '40' : 'transparent'}`,
+                      textAlign: 'left', transition: 'all 0.12s ease',
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#ffffff08'; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <span style={{
+                      fontSize: 12, fontWeight: isActive ? 700 : 500,
+                      color: isActive ? C.text : C.textMuted,
+                      fontFamily: 'monospace',
+                    }}>
+                      {zone.label}
+                    </span>
+                    {isActive && <Check size={13} color={C.blue} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </ConfigCard>
+  );
+}
+
 export default function Settings() {
   return (
     <div style={{ padding: '24px', maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -70,6 +153,9 @@ export default function Settings() {
           <p style={{ margin: '3px 0 0', fontSize: 12, color: C.textMuted }}>System config, manual controls, and diagnostics</p>
         </div>
       </div>
+
+      {/* Timezone selector — first card */}
+      <TimezoneCard />
 
       {/* Test Signal — moved here from Portfolio */}
       <ConfigCard

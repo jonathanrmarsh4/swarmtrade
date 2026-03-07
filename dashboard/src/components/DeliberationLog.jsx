@@ -4,6 +4,7 @@ import { CheckCircle, PauseCircle, Shield, TrendingUp, TrendingDown, MessageSqua
 // Shows all agent theses, Round 2 rebuttals, Orchestrator synthesis, and Risk Agent decision.
 
 import { useState, useEffect, useRef } from 'react';
+import { useTimezone } from '../lib/timezone';
 import { useRealtimeTable } from '../lib/supabase';
 import PriceChart from './PriceChart';
 
@@ -118,9 +119,8 @@ function DirectionPill({ direction }) {
 // ─── Deliberation row (collapsed) ─────────────────────────────────────────────
 
 function DeliberationRow({ row, isExpanded, onToggle, isFocused, rowRef }) {
-  const ts = row.started_at
-    ? new Date(row.started_at).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' })
-    : '—';
+  const { formatTs } = useTimezone();
+  const ts = formatTs(row.started_at);
 
   return (
     <div

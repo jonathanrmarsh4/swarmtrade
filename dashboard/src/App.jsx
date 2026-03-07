@@ -9,6 +9,7 @@ import Analyst from './components/Analyst';
 import WarRoom from './components/WarRoom';
 import Settings from './components/Settings';
 import { BarChart, Brain, Radio, Bot, ScanLine, Zap, Settings as SettingsIcon } from 'lucide-react';
+import { TimezoneProvider, useTimezone } from './lib/timezone';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
 
@@ -82,14 +83,16 @@ function ConnectionStatus({ count, status }) {
       {/* Floating analyst — always mounted, appears over everything */}
       <Analyst />
     </div>
+    </TimezoneProvider>
   );
 }
 
 // ─── System status bar ────────────────────────────────────────────────────────
 
 function SystemBar({ signalCount, signalStatus }) {
+  const { timezone, tzLabel } = useTimezone();
   const now = new Date().toLocaleString('en-AU', {
-    timeZone: 'Australia/Sydney',
+    timeZone: timezone,
     dateStyle: 'medium',
     timeStyle: 'short',
   });
@@ -107,10 +110,11 @@ function SystemBar({ signalCount, signalStatus }) {
           Phase: <span className="text-[#60a5fa] font-semibold">2 — Swarm Active</span>
         </span>
       </div>
-      <span className="tabular-nums">{now} AEST</span>
+      <span className="tabular-nums">{now} {tzLabel}</span>
       {/* Floating analyst — always mounted, appears over everything */}
       <Analyst />
     </div>
+    </TimezoneProvider>
   );
 }
 
@@ -178,6 +182,7 @@ export default function App() {
   const { count: signalCount, status: signalStatus } = useSignalCount();
 
   return (
+    <TimezoneProvider>
     <div className="flex flex-col min-h-screen bg-[#0D1B2A] font-sans">
       <Header />
       <SystemBar signalCount={signalCount} signalStatus={signalStatus} />
@@ -195,5 +200,6 @@ export default function App() {
       {/* Floating analyst — always mounted, appears over everything */}
       <Analyst />
     </div>
+    </TimezoneProvider>
   );
 }
