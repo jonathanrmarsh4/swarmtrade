@@ -163,10 +163,20 @@ export default function CostMonitor() {
     setLoading(false);
   }, [days]);
 
+  // Load saved cost limits from system_config on mount
+  useEffect(() => {
+    fetch(`${BACKEND}/api/config/cost_limits`)
+      .then(r => r.json())
+      .then(data => {
+        if (data?.value) {
+          setLimits(l => ({ ...l, ...data.value }));
+        }
+      })
+      .catch(e => console.error('Failed to load cost limits:', e));
+  }, []);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    // Load cost limits from backend via costs endpoint (includes it)
-    // Also poll to keep today's spend fresh
     const id = setInterval(load, 30_000);
     return () => clearInterval(id);
   }, [load]);
@@ -174,15 +184,12 @@ export default function CostMonitor() {
   const saveLimits = async () => {
     setSaving(true);
     try {
-      // We call the backend which reads from system_config — but we can also write
-      // directly via the Supabase client. For now use the closest available route.
-      const { createClient } = await import('@supabase/supabase-js');
-      // We don't expose supabase URL to frontend easily, so use the cost-limits
-      // section that's already in Settings.jsx's supabase import
-      const { supabase } = await import('../lib/supabase');
-      const { error } = await supabase.from('system_config')
-        .upsert({ key: 'cost_limits', value: limits, updated_at: new Date().toISOString() });
-      if (error) throw error;
+      const r = await fetch(`${BACKEND}/api/config/cost_limits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: limits }),
+      });
+      if (!r.ok) throw new Error(await r.text());
       setSaveMsg({ type: 'ok', msg: 'Saved — applies to next deliberation' });
     } catch (e) {
       setSaveMsg({ type: 'err', msg: e.message });
