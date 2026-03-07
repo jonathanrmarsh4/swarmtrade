@@ -187,53 +187,35 @@ function MessageBubble({ msg }) {
   const isHtmlFlowchart = msg.content.trim().startsWith('<!DOCTYPE') || msg.content.trim().startsWith('<html');
 
   if (isHtmlFlowchart) {
-    const openDiagram = () => {
-      const w = window.open('', '_blank');
-      if (w) {
-        w.document.open();
-        w.document.write(msg.content);
-        w.document.close();
-      }
-    };
+    // Extract just the <body> content from the HTML to inject inline
+    // This avoids all new-window/iframe security issues entirely
+    const bodyMatch = msg.content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    const headMatch = msg.content.match(/<style[^>]*>([\s\S]*?)<\/style>/gi);
+    const inlineStyles = headMatch ? headMatch.join('\n') : '';
+    const bodyContent = bodyMatch ? bodyMatch[1] : msg.content;
 
     return (
       <div style={{
-        maxWidth: '82%',
+        width: '100%',
         borderRadius: '4px 14px 14px 14px',
         border: `1px solid ${C.border}`,
         overflow: 'hidden',
-        background: C.surface2,
+        background: '#080c14',
       }}>
         <div style={{
-          padding: '14px 16px',
-          display: 'flex', flexDirection: 'column', gap: 10,
+          padding: '8px 14px',
+          background: C.surface,
+          borderBottom: `1px solid ${C.border}`,
+          fontSize: 11, fontWeight: 700, color: C.accent,
+          display: 'flex', alignItems: 'center', gap: 6,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 18 }}>◈</span>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: C.accent }}>Signal → Position Flow</div>
-              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>
-                Generated from live source code · opens in new tab
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={openDiagram}
-            style={{
-              padding: '9px 0',
-              background: `linear-gradient(135deg, ${C.accent}22, ${C.accent}10)`,
-              border: `1px solid ${C.accent}60`,
-              borderRadius: 8,
-              color: C.accent,
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: 'pointer',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Open Flow Diagram →
-          </button>
+          ◈ Signal → Position Flow
+          <span style={{ color: C.textMuted, fontWeight: 400, marginLeft: 4 }}>· generated from live source</span>
         </div>
+        <div
+          dangerouslySetInnerHTML={{ __html: inlineStyles + bodyContent }}
+          style={{ padding: '0', color: '#e2e8f4', fontSize: 13, lineHeight: 1.6 }}
+        />
       </div>
     );
   }
