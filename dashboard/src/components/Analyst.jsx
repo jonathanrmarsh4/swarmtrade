@@ -188,11 +188,12 @@ function MessageBubble({ msg }) {
 
   if (isHtmlFlowchart) {
     const openDiagram = () => {
-      const blob = new Blob([msg.content], { type: 'text/html' });
-      const url  = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      // Revoke after a short delay to allow the tab to load
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      const w = window.open('', '_blank');
+      if (w) {
+        w.document.open();
+        w.document.write(msg.content);
+        w.document.close();
+      }
     };
 
     return (
