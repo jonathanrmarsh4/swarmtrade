@@ -693,10 +693,25 @@ async function createTradeRecord(deliberationId, signal, marketData, riskVerdict
     ((riskVerdict.positionSizePct / 100) * INITIAL_PORTFOLIO_VALUE_USD).toFixed(2),
   );
 
+  // ATR-based stop loss and take profit (1.5× ATR stop, 3× ATR target = 2:1 R:R)
+  const atr = marketData.atr ?? (marketData.currentPrice * 0.02);
+  const stopLoss   = signal.direction === 'long'
+    ? parseFloat((marketData.currentPrice - 1.5 * atr).toFixed(8))
+    : parseFloat((marketData.currentPrice + 1.5 * atr).toFixed(8));
+  const takeProfit = signal.direction === 'long'
+    ? parseFloat((marketData.currentPrice + 3.0 * atr).toFixed(8))
+    : parseFloat((marketData.currentPrice - 3.0 * atr).toFixed(8));
+
   const tradeRow = {
     deliberation_id:   deliberationId,
+    asset:             signal.asset,
+    direction:         signal.direction,
     entry_price:       marketData.currentPrice > 0 ? marketData.currentPrice : null,
     position_size_usd: positionSizeUsd,
+    stop_loss:         stopLoss,
+    take_profit:       takeProfit,
+    timeframe:         signal.timeframe ?? null,
+    trading_mode:      marketData.tradingMode ?? 'dayTrade',
     mode:              process.env.SWARMTRADE_MODE === 'live' ? 'live' : 'paper',
     status:            'pending_execution',
   };
