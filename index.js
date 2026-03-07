@@ -142,6 +142,46 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── Binance proxy routes ────────────────────────────────────────────────────
+  // Australian IPs are blocked by Binance. The backend runs on Railway (US/SG)
+  // and can reach Binance. These two endpoints proxy chart data to the dashboard.
+
+  // GET /proxy/klines?symbol=BTCUSDT&interval=1h&limit=80
+  if (req.method === 'GET' && req.url.startsWith('/proxy/klines')) {
+    const qs = new URL(req.url, 'http://x').searchParams;
+    const symbol   = qs.get('symbol')   ?? 'BTCUSDT';
+    const interval = qs.get('interval') ?? '1h';
+    const limit    = qs.get('limit')    ?? '80';
+    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`)
+      .then(r => r.json())
+      .then(data => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(data));
+      })
+      .catch(err => {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      });
+    return;
+  }
+
+  // GET /proxy/price?symbol=BTCUSDT
+  if (req.method === 'GET' && req.url.startsWith('/proxy/price')) {
+    const qs = new URL(req.url, 'http://x').searchParams;
+    const symbol = qs.get('symbol') ?? 'BTCUSDT';
+    fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`)
+      .then(r => r.json())
+      .then(data => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(data));
+      })
+      .catch(err => {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      });
+    return;
+  }
+
   // Analyst chat proxy — forwards messages to Anthropic API server-side
   if (req.method === 'POST' && req.url === '/analyst/chat') {
     handleAnalystChat(req, res).catch(err => {

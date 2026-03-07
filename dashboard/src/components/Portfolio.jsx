@@ -3,6 +3,12 @@ import { TrendingUp, TrendingDown, X, Activity, Target, Shield, Clock, BarChart2
 import { useRealtimeTable, supabase } from '../lib/supabase';
 import { useTimezone } from '../lib/timezone';
 
+const BACKEND = import.meta.env.VITE_BACKEND_URL ?? 'https://swarmtrade-production.up.railway.app';
+const binanceKlines = (symbol, interval, limit) =>
+  `${BACKEND}/proxy/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+const binancePrice  = (symbol) =>
+  `${BACKEND}/proxy/price?symbol=${symbol}`;
+
 const C = {
   bg:        '#0D1B2A',
   surface:   '#112233',
@@ -53,7 +59,7 @@ function CandlestickChart({ asset, entryPrice, stopLoss, takeProfit, timeframe }
   useEffect(() => {
     if (!symbol) return;
     setLoading(true);
-    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=80`)
+    fetch(binanceKlines(symbol, interval, 80))
       .then(r => r.json())
       .then(data => {
         if (!Array.isArray(data)) throw new Error('Bad response');
@@ -66,12 +72,14 @@ function CandlestickChart({ asset, entryPrice, stopLoss, takeProfit, timeframe }
       .catch(e => { setError(e.message); setLoading(false); });
   }, [symbol, interval]);
 
-  // Live price via WebSocket
+  // Live price via backend proxy (Binance WS not available from AU IPs)
   useEffect(() => {
     if (!symbol) return;
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
-    ws.onmessage = e => { try { setLivePrice(+JSON.parse(e.data).c); } catch {} };
-    return () => ws.close();
+    const poll = () => fetch(binancePrice(symbol))
+      .then(r => r.json()).then(d => { if (d.price) setLivePrice(+d.price); }).catch(() => {});
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => clearInterval(id);
   }, [symbol]);
 
   useEffect(() => {
@@ -216,7 +224,7 @@ function RSIIndicator({ asset, timeframe }) {
 
   useEffect(() => {
     if (!symbol) return;
-    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=50`)
+    fetch(binanceKlines(symbol, interval, 50))
       .then(r => r.json())
       .then(data => {
         const closes = data.map(k => +k[4]);
@@ -286,11 +294,12 @@ function TradeDetailPanel({ trade, onClose }) {
   // Live price
   useEffect(() => {
     if (!symbol) return;
-    fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`)
-      .then(r => r.json()).then(d => setLivePrice(+d.price)).catch(() => {});
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
-    ws.onmessage = e => { try { setLivePrice(+JSON.parse(e.data).c); } catch {} };
-    return () => ws.close();
+    fetch(binancePrice(symbol)).then(r => r.json()).then(d => { if (d.price) setLivePrice(+d.price); }).catch(() => {});
+    const id = setInterval(() =>
+      fetch(binancePrice(symbol)).then(r => r.json())
+        .then(d => { if (d.price) setLivePrice(+d.price); }).catch(() => {}),
+      3000);
+    return () => clearInterval(id);
   }, [symbol]);
 
   const entry = trade.entry_price ?? 0;
@@ -458,11 +467,12 @@ function PositionRow({ trade, onClick }) {
 
   useEffect(() => {
     if (!symbol) return;
-    fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`)
-      .then(r => r.json()).then(d => setLivePrice(+d.price)).catch(() => {});
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
-    ws.onmessage = e => { try { setLivePrice(+JSON.parse(e.data).c); } catch {} };
-    return () => ws.close();
+    fetch(binancePrice(symbol)).then(r => r.json()).then(d => { if (d.price) setLivePrice(+d.price); }).catch(() => {});
+    const id = setInterval(() =>
+      fetch(binancePrice(symbol)).then(r => r.json())
+        .then(d => { if (d.price) setLivePrice(+d.price); }).catch(() => {}),
+      5000);
+    return () => clearInterval(id);
   }, [symbol]);
 
   const pnlPct = livePrice && entry
