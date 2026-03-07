@@ -11,6 +11,7 @@ import Settings from './components/Settings';
 import CostMonitor from './components/CostMonitor';
 import { BarChart, Brain, Radio, Bot, ScanLine, Zap, Settings as SettingsIcon, DollarSign } from 'lucide-react';
 import { TimezoneProvider, useTimezone } from './lib/timezone';
+import IntelTicker from './components/IntelTicker';
 
 // ─── Nav tabs ─────────────────────────────────────────────────────────────────
 
@@ -185,6 +186,7 @@ export default function App() {
     <TimezoneProvider>
     <div className="flex flex-col min-h-screen bg-[#0D1B2A] font-sans">
       <Header />
+      <IntelTicker onNavigate={setActiveTab} />
       <SystemBar signalCount={signalCount} signalStatus={signalStatus} />
       <Nav active={activeTab} onSelect={setActiveTab} />
 
