@@ -168,6 +168,13 @@ function Nav({ active, onSelect }) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('portfolio');
+  const [focusedSignalId, setFocusedSignalId] = useState(null);
+
+  // Called from SignalHistory when user clicks a signal row
+  function navigateToDeliberation(signalId) {
+    setFocusedSignalId(signalId);
+    setActiveTab('deliberations');
+  }
   const { count: signalCount, status: signalStatus } = useSignalCount();
 
   return (
@@ -178,8 +185,8 @@ export default function App() {
 
       <main className="flex-1 overflow-auto bg-grid">
         {activeTab === 'portfolio'     && <Portfolio />}
-        {activeTab === 'deliberations' && <DeliberationLog />}
-        {activeTab === 'signals'       && <SignalHistory />}
+        {activeTab === 'deliberations' && <DeliberationLog focusedSignalId={focusedSignalId} onClearFocus={() => setFocusedSignalId(null)} />}
+        {activeTab === 'signals'       && <SignalHistory onNavigate={navigateToDeliberation} />}
         {activeTab === 'agents'        && <AgentReputation />}
         {activeTab === 'scanner'       && <Scanner />}
         {activeTab === 'warroom'       && <WarRoom />}

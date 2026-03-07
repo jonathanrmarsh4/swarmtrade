@@ -1,9 +1,9 @@
 // DeliberationLog — displays the full committee reasoning for each trade decision.
-import { CheckCircle, PauseCircle, Shield, TrendingUp, TrendingDown, MessageSquare, Brain } from 'lucide-react';
+import { CheckCircle, PauseCircle, Shield, TrendingUp, TrendingDown, MessageSquare, Brain, Wifi, ScanLine, Tv, FlaskConical, Radio } from 'lucide-react';
 // Subscribes to Supabase deliberations table in real time.
 // Shows all agent theses, Round 2 rebuttals, Orchestrator synthesis, and Risk Agent decision.
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRealtimeTable } from '../lib/supabase';
 import PriceChart from './PriceChart';
 
@@ -69,20 +69,71 @@ function ScoreBar({ label, score, color }) {
   );
 }
 
+
+// ─── Origin badge ─────────────────────────────────────────────────────────────
+
+function OriginBadge({ signalType }) {
+  const origins = {
+    websocket_trigger: { label: 'WebSocket',   color: '#2dd4bf', Icon: Wifi         },
+    scanner:           { label: 'Scanner',     color: '#a78bfa', Icon: ScanLine     },
+    manual:            { label: 'Manual',      color: '#f59e0b', Icon: FlaskConical },
+    tradingview:       { label: 'TradingView', color: '#60a5fa', Icon: Tv           },
+  };
+  const tvTypes = new Set(['macd_crossover','breakout','rsi_oversold','rsi_overbought','ema_cross','ema_crossover']);
+  const key = signalType?.toLowerCase() ?? '';
+  let origin = origins[key];
+  if (!origin && tvTypes.has(key)) origin = origins.tradingview;
+  if (!origin) origin = { label: signalType ?? 'Unknown', color: '#64748b', Icon: Radio };
+  const { label, color, Icon } = origin;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
+      color, background: `${color}15`, border: `1px solid ${color}40`,
+      borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap',
+    }}>
+      <Icon size={9} />{label}
+    </span>
+  );
+}
+
+function DirectionPill({ direction }) {
+  const map = {
+    long:  { color: C.green, label: '▲ Long'  },
+    short: { color: C.red,   label: '▼ Short' },
+  };
+  const d = map[direction?.toLowerCase()] ?? null;
+  if (!d) return null;
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, color: d.color,
+      background: `${d.color}18`, border: `1px solid ${d.color}40`,
+      borderRadius: 20, padding: '2px 8px',
+    }}>
+      {d.label}
+    </span>
+  );
+}
+
 // ─── Deliberation row (collapsed) ─────────────────────────────────────────────
 
-function DeliberationRow({ row, isExpanded, onToggle }) {
+function DeliberationRow({ row, isExpanded, onToggle, isFocused, rowRef }) {
   const ts = row.started_at
     ? new Date(row.started_at).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' })
     : '—';
 
   return (
-    <div style={{
-      background: C.surface,
-      border: `1px solid ${C.border}`,
-      borderRadius: 10,
-      overflow: 'hidden',
-    }}>
+    <div
+      ref={rowRef}
+      style={{
+        background: C.surface,
+        border: `1px solid ${isFocused ? C.blue : C.border}`,
+        borderRadius: 10,
+        overflow: 'hidden',
+        boxShadow: isFocused ? `0 0 0 2px ${C.blue}40` : 'none',
+        transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+      }}
+    >
       {/* Summary row — always visible */}
       <button
         onClick={onToggle}
@@ -91,20 +142,29 @@ function DeliberationRow({ row, isExpanded, onToggle }) {
           background: 'transparent',
           border: 'none',
           cursor: 'pointer',
-          padding: '14px 16px',
+          padding: '12px 16px',
           display: 'grid',
-          gridTemplateColumns: 'auto 1fr auto auto',
-          gap: '0 14px',
+          gridTemplateColumns: 'auto auto 1fr auto auto',
+          gap: '0 10px',
           alignItems: 'center',
           textAlign: 'left',
         }}
       >
-        <span style={{ fontSize: 11, color: C.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontSize: 11, color: C.textMuted, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
           {ts}
         </span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
-          {row.signal_id ? `Signal ${row.signal_id.slice(0, 8)}…` : 'No signal'}
-        </span>
+        {/* Asset + direction + origin */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+          {row.asset && (
+            <span style={{ fontSize: 13, fontWeight: 800, color: C.text, letterSpacing: '0.02em' }}>
+              {row.asset.replace('USDT', '/USDT')}
+            </span>
+          )}
+          {row.direction && <DirectionPill direction={row.direction} />}
+          {row.signal_type && <OriginBadge signalType={row.signal_type} />}
+        </div>
+        {/* spacer */}
+        <span />
         <DecisionBadge decision={row.final_decision} />
         <span style={{
           color: C.textMuted, fontSize: 14,
@@ -198,15 +258,30 @@ function DeliberationRow({ row, isExpanded, onToggle }) {
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-export default function DeliberationLog() {
+export default function DeliberationLog({ focusedSignalId, onClearFocus }) {
   const [expanded, setExpanded] = useState(null);
+  const focusedRef = useRef(null);
   const { data: rows, loading, error } = useRealtimeTable('deliberations', {
     orderBy: 'started_at',
     ascending: false,
     limit: 30,
   });
 
+  // Auto-expand and scroll to the deliberation that matches the focused signal
+  useEffect(() => {
+    if (!focusedSignalId || !rows.length) return;
+    const match = rows.find(r => r.signal_id === focusedSignalId);
+    if (match) {
+      setExpanded(match.id);
+      // Scroll after a short delay so the DOM has painted
+      setTimeout(() => {
+        focusedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [focusedSignalId, rows]);
+
   function toggle(id) {
+    if (onClearFocus) onClearFocus(); // clear highlight when user manually toggles
     setExpanded(prev => (prev === id ? null : id));
   }
 
@@ -264,6 +339,8 @@ export default function DeliberationLog() {
               row={row}
               isExpanded={expanded === row.id}
               onToggle={() => toggle(row.id)}
+              isFocused={focusedSignalId && row.signal_id === focusedSignalId}
+              rowRef={focusedSignalId && row.signal_id === focusedSignalId ? focusedRef : null}
             />
           ))}
         </div>

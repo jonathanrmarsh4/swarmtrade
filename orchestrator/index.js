@@ -380,6 +380,7 @@ async function runRound1(signalData, portfolioState) {
     signal_id:         signalData.id,
     asset:             signalData.asset,
     direction:         signalData.direction,
+    signal_type:       signalData.signal_type ?? null,
     bull_score:        validated.bull.score,
     bull_thesis:       validated.bull.thesis,
     bear_score:        validated.bear.score,
