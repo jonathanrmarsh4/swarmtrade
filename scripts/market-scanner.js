@@ -21,7 +21,7 @@ const { TRADING_PROFILES, ALL_PROFILE_IDS } = require('../config/trading-profile
 
 // ── Global config ─────────────────────────────────────────────────────────────
 
-const TOP_N_ASSETS           = 100;
+// Trading universe defined below in TRADING_UNIVERSE — TOP_N_ASSETS no longer used
 const MAX_WATCHLIST_SIZE     = 5;
 const SCAN_INTERVAL_MS       = 10 * 60 * 1000;   // 10 min — all profiles scan together
 const ESCALATION_COOLDOWN_MS = 30 * 60 * 1000;   // 30 min per pair per profile
@@ -135,15 +135,32 @@ function scoreAsset(symbol, price, candles, profile) {
 
 // ── Binance REST helpers ──────────────────────────────────────────────────────
 
+// ── Focused trading universe ──────────────────────────────────────────────────
+// Fixed list of liquid, well-traded USDT pairs.
+// Criteria: high Binance volume, tight spreads, available on testnet,
+// meaningful volatility across all 4 timeframes.
+// Keeping this small (10 pairs) means 4 profiles × 10 pairs × 300ms = 12s per scan.
+const TRADING_UNIVERSE = [
+  'BTCUSDT',   // Bitcoin       — deepest liquidity, all timeframes
+  'ETHUSDT',   // Ethereum      — second deepest, high volatility
+  'SOLUSDT',   // Solana        — strong vol, active derivatives
+  'BNBUSDT',   // BNB           — Binance native, very liquid
+  'XRPUSDT',   // XRP           — high volume, momentum-prone
+  'DOGEUSDT',  // Doge          — retail-driven, intraday spikes
+  'ADAUSDT',   // Cardano       — steady volume, trend-friendly
+  'AVAXUSDT',  // Avalanche     — high beta, good for swing
+  'LINKUSDT',  // Chainlink     — reliable volume, mid-cap leader
+  'MATICUSDT', // Polygon       — active, good intraday range
+];
+
 async function fetchTopPairs() {
-  const res = await fetch('https://api.binance.com/api/v3/ticker/24hr', { signal: AbortSignal.timeout(15_000) });
-  if (!res.ok) throw new Error(`Binance ticker HTTP ${res.status}`);
+  // Fetch live prices for our focused universe in one batch request
+  const symbols = JSON.stringify(TRADING_UNIVERSE);
+  const url = 'https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(symbols);
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error('Binance ticker HTTP ' + res.status);
   const tickers = await res.json();
-  return tickers
-    .filter(t => t.symbol.endsWith('USDT') && parseFloat(t.quoteVolume) > 0)
-    .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
-    .slice(0, TOP_N_ASSETS)
-    .map(t => ({ symbol: t.symbol, price: parseFloat(t.lastPrice) }));
+  return tickers.map(t => ({ symbol: t.symbol, price: parseFloat(t.price) }));
 }
 
 async function fetchCandles(symbol, interval, limit) {
