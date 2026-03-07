@@ -214,7 +214,16 @@ function MessageBubble({ msg }) {
         </div>
         <div
           dangerouslySetInnerHTML={{ __html: inlineStyles + bodyContent }}
-          style={{ padding: '0', color: '#e2e8f4', fontSize: 13, lineHeight: 1.6 }}
+          style={{
+            padding: '0',
+            color: '#e2e8f4',
+            fontSize: 13,
+            lineHeight: 1.6,
+            maxHeight: 520,
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+          }}
+          onWheel={e => e.stopPropagation()}
         />
       </div>
     );
@@ -511,8 +520,8 @@ ${snapshot.reflections.slice(0,2).map(r => `- ${r.created_at?.slice(0,10)}: ${r.
           position: 'fixed',
           bottom: 92,
           right: 28,
-          width: 420,
-          height: 580,
+          width: Math.min(640, window.innerWidth - 40),
+          height: Math.min(680, window.innerHeight - 120),
           background: C.bg,
           border: `1px solid ${C.border}`,
           borderRadius: 16,
