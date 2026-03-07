@@ -330,8 +330,8 @@ function TradeDetailPanel({ trade, onClose, onClosed }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Close failed');
       setClosing(null);
-      onClosed?.();   // refresh portfolio list
-      onClose();
+      onClose();       // close the panel immediately
+      onClosed?.();    // triggers refreshKey increment → re-fetch trades list
     } catch (err) {
       setCloseError(err.message);
       setClosing(null);

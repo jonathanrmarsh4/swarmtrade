@@ -394,15 +394,28 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // Resolve exit price — use provided value or fetch live from Binance
+        // Resolve exit price — use provided value or fetch live from Binance testnet
+        // (backend is in Singapore so direct Binance calls work fine server-side)
         let exitPrice = payload.exitPrice ? parseFloat(payload.exitPrice) : null;
         if (!exitPrice) {
-          const symbol = asset.replace('/', '');
-          const tickerRes = await fetch(
-            `https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`
-          );
-          const ticker = await tickerRes.json();
-          exitPrice = ticker.price ? parseFloat(ticker.price) : parseFloat(trade.entry_price);
+          try {
+            const symbol    = asset.replace('/', '');
+            const isLive    = process.env.SWARMTRADE_MODE === 'live';
+            const binanceBase = isLive
+              ? 'https://api.binance.com'
+              : 'https://testnet.binance.vision';
+            const tickerRes = await fetch(
+              `${binanceBase}/api/v3/ticker/price?symbol=${symbol}`
+            );
+            if (tickerRes.ok) {
+              const ticker = await tickerRes.json();
+              exitPrice = ticker.price ? parseFloat(ticker.price) : null;
+            }
+          } catch (e) {
+            console.warn('[server] Could not fetch live price for close, using entry price:', e.message);
+          }
+          // Final fallback: use entry price (P&L = 0) rather than blocking the close
+          if (!exitPrice) exitPrice = parseFloat(trade.entry_price);
         }
 
         const reason = payload.reason ?? 'manual';

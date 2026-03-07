@@ -30,7 +30,7 @@ export function useRealtimeTable(table, {
   ascending = false,
   limit,
   filter,
-} = {}) {
+} = {}, refreshKey = 0) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -52,7 +52,7 @@ export function useRealtimeTable(table, {
     } finally {
       setLoading(false);
     }
-  }, [table, orderBy, ascending, limit, filter]);
+  }, [table, orderBy, ascending, limit, filter, refreshKey]); // refreshKey forces re-fetch
 
   useEffect(() => {
     fetchData();
