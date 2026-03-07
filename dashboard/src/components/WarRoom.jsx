@@ -240,6 +240,7 @@ export default function WarRoom() {
   const [newIds,          setNewIds]          = useState(new Set());
   const [isActive,        setIsActive]        = useState(false);
   const [currentSignalId, setCurrentSignalId] = useState(null);
+  const [clearedSignalId, setClearedSignalId] = useState(null);
   const [sb,              setSb]              = useState(null);
   const bottomRef = useRef(null);
 
@@ -283,7 +284,12 @@ export default function WarRoom() {
     // Realtime subscription (works when Supabase Realtime is enabled)
     const channel = sb.channel('war_room_events')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'deliberation_events' }, ({ new: e }) => {
-        mergeEvents([e], e.signal_id);
+        // A new signal arriving after clear should always show
+        setClearedSignalId(prev => {
+          if (prev && e.signal_id === prev) return prev; // still cleared signal — ignore
+          mergeEvents([e], e.signal_id);
+          return prev;
+        });
       })
       .subscribe((status) => {
         console.log('[WarRoom] Realtime status:', status);
@@ -293,8 +299,13 @@ export default function WarRoom() {
     const poll = setInterval(async () => {
       const { data: latest } = await sb.from('deliberation_events').select('signal_id').order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (!latest?.signal_id) return;
-      const { data } = await sb.from('deliberation_events').select('*').eq('signal_id', latest.signal_id).order('sequence', { ascending: true });
-      if (data?.length) mergeEvents(data, latest.signal_id);
+      // Don't re-populate a signal the user explicitly cleared
+      setClearedSignalId(prev => {
+        if (prev && latest.signal_id === prev) return prev;
+        sb.from('deliberation_events').select('*').eq('signal_id', latest.signal_id).order('sequence', { ascending: true })
+          .then(({ data }) => { if (data?.length) mergeEvents(data, latest.signal_id); });
+        return prev;
+      });
     }, 3000);
 
     return () => { sb.removeChannel(channel); clearInterval(poll); };
@@ -318,7 +329,7 @@ export default function WarRoom() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <LiveIndicator active={isActive} />
-          <button onClick={() => setEvents([])} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textMuted, fontSize: 11, padding: '5px 10px', cursor: 'pointer' }}>
+          <button onClick={() => { setEvents([]); setIsActive(false); setClearedSignalId(currentSignalId); }} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textMuted, fontSize: 11, padding: '5px 10px', cursor: 'pointer' }}>
             Clear
           </button>
         </div>
