@@ -71,78 +71,39 @@ function ConfigCard({ title, description, icon: Icon, children }) {
 
 function TimezoneCard() {
   const { timezone, setTimezone, tzLabel, formatTs } = useTimezone();
-  const selected = ALL_ZONES.find(z => z.value === timezone);
   const now = new Date().toISOString();
 
   return (
     <ConfigCard
       icon={Globe}
       title="Timezone"
-      description="All timestamps across the dashboard — signals, deliberations, scanner — will display in this timezone"
+      description="All timestamps across the dashboard will display in this timezone"
     >
-      {/* Current selection preview */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 14px', borderRadius: 8, marginBottom: 14,
-        background: `${C.blue}10`, border: `1px solid ${C.blue}30`,
-      }}>
-        <div>
-          <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 2 }}>Current timezone</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
-            {selected?.label ?? timezone}
-          </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <select
+          value={timezone}
+          onChange={e => setTimezone(e.target.value)}
+          style={{
+            flex: 1,
+            background: C.bg, border: `1px solid ${C.border}`,
+            borderRadius: 7, color: C.text, fontSize: 12,
+            padding: '8px 10px', cursor: 'pointer', outline: 'none',
+          }}
+        >
+          {TIMEZONE_GROUPS.map(group => (
+            <optgroup key={group.label} label={group.label}>
+              {group.zones.map(zone => (
+                <option key={zone.value} value={zone.value}>{zone.label}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <div style={{
+          fontSize: 12, color: C.blue, fontWeight: 700,
+          fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+        }}>
+          {formatTs(now, { timeStyle: 'short' })} {tzLabel}
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 2 }}>Right now</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: C.blue, fontVariantNumeric: 'tabular-nums' }}>
-            {formatTs(now, { dateStyle: 'medium', timeStyle: 'short' })} {tzLabel}
-          </div>
-        </div>
-      </div>
-
-      {/* Group selector */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {TIMEZONE_GROUPS.map(group => (
-          <div key={group.label}>
-            <div style={{
-              fontSize: 9, fontWeight: 700, letterSpacing: '0.12em',
-              textTransform: 'uppercase', color: C.textMuted,
-              marginBottom: 6, paddingBottom: 4,
-              borderBottom: `1px solid ${C.border}`,
-            }}>
-              {group.label}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {group.zones.map(zone => {
-                const isActive = timezone === zone.value;
-                return (
-                  <button
-                    key={zone.value}
-                    onClick={() => setTimezone(zone.value)}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '8px 10px', borderRadius: 7, cursor: 'pointer',
-                      background: isActive ? `${C.blue}15` : 'transparent',
-                      border: `1px solid ${isActive ? C.blue + '40' : 'transparent'}`,
-                      textAlign: 'left', transition: 'all 0.12s ease',
-                    }}
-                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#ffffff08'; }}
-                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <span style={{
-                      fontSize: 12, fontWeight: isActive ? 700 : 500,
-                      color: isActive ? C.text : C.textMuted,
-                      fontFamily: 'monospace',
-                    }}>
-                      {zone.label}
-                    </span>
-                    {isActive && <Check size={13} color={C.blue} />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
       </div>
     </ConfigCard>
   );
