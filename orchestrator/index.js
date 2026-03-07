@@ -14,7 +14,8 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { AGENT_OUTPUT_SCHEMA } = require('../config/models.js');
-const { TRADING_PROFILES } = require('../config/trading-profiles.js');
+const { TRADING_PROFILES }  = require('../config/trading-profiles.js');
+const { calculateLevels, DEFAULT_SL_TP_CONFIG } = require('../config/sl-tp-config.js');
 
 const bull      = require('../agents/bull/index.js');
 const bear      = require('../agents/bear/index.js');
@@ -553,6 +554,8 @@ function extractMarketData(signal) {
     fearGreedIndex:        p.fear_greed             ?? 50,
     recentRejectionLevels: p.rejection_levels       ?? [],
     atr,
+    support:               p.support                ?? null,
+    resistance:            p.resistance             ?? null,
     stopLoss:              p.stop_loss              ?? null,
     takeProfit:            p.take_profit            ?? null,
     tradingMode,
@@ -693,14 +696,27 @@ async function createTradeRecord(deliberationId, signal, marketData, riskVerdict
     ((riskVerdict.positionSizePct / 100) * INITIAL_PORTFOLIO_VALUE_USD).toFixed(2),
   );
 
-  // ATR-based stop loss and take profit (1.5× ATR stop, 3× ATR target = 2:1 R:R)
-  const atr = marketData.atr ?? (marketData.currentPrice * 0.02);
-  const stopLoss   = signal.direction === 'long'
-    ? parseFloat((marketData.currentPrice - 1.5 * atr).toFixed(8))
-    : parseFloat((marketData.currentPrice + 1.5 * atr).toFixed(8));
-  const takeProfit = signal.direction === 'long'
-    ? parseFloat((marketData.currentPrice + 3.0 * atr).toFixed(8))
-    : parseFloat((marketData.currentPrice - 3.0 * atr).toFixed(8));
+  // SL/TP from config — reads system_config.sl_tp_config from Supabase if available,
+  // falls back to DEFAULT_SL_TP_CONFIG. Supports atr / percentage / sr strategies.
+  let slTpConfig = DEFAULT_SL_TP_CONFIG;
+  try {
+    const { data: cfgRow } = await getSupabase()
+      .from('system_config').select('value').eq('key', 'sl_tp_config').single();
+    if (cfgRow?.value) slTpConfig = cfgRow.value;
+  } catch { /* use default */ }
+
+  const { stopLoss, takeProfit, strategy: slTpStrategy, rr } = calculateLevels({
+    direction:   signal.direction,
+    entryPrice:  marketData.currentPrice,
+    atr:         marketData.atr ?? (marketData.currentPrice * 0.02),
+    support:     marketData.support   ?? null,
+    resistance:  marketData.resistance ?? null,
+    tradingMode: marketData.tradingMode,
+    config:      slTpConfig,
+  });
+  console.log(
+    `[orchestrator] SL/TP — strategy=${slTpStrategy} stop=${stopLoss} tp=${takeProfit} R:R=${rr}`,
+  );
 
   const tradeRow = {
     deliberation_id:   deliberationId,

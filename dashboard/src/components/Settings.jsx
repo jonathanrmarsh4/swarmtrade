@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import TestSignal from './TestSignal';
-import { Settings as SettingsIcon, FlaskConical, Webhook, Shield, Clock, Globe, Check, Crosshair, Plus, X, RefreshCw } from 'lucide-react';
+import { Settings as SettingsIcon, FlaskConical, Webhook, Shield, Clock, Globe, Check, Crosshair, Plus, X, RefreshCw, TrendingUp, Target, Activity, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTimezone, TIMEZONE_GROUPS, ALL_ZONES } from '../lib/timezone';
 import { supabase } from '../lib/supabase';
 
@@ -14,6 +14,9 @@ const C = {
   text:      '#f8fafc',
   textMuted: '#64748b',
   textDim:   '#334155',
+  red:       '#f87171',
+  purple:    '#a78bfa',
+  surface2:  '#0f1e30',
 };
 
 function SectionHeader({ icon: Icon, title, description }) {
@@ -318,6 +321,342 @@ function TradingUniverseCard() {
 
 // ─── Settings page ───────────────────────────────────────────────────────────
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SL/TP Configuration Card
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PROFILE_META = {
+  intraday: { label: 'Intraday',   color: '#f59e0b', description: 'Hold hours' },
+  dayTrade: { label: 'Day Trade',  color: '#60a5fa', description: 'Hold <24h'  },
+  swing:    { label: 'Swing',      color: '#a78bfa', description: 'Hold 2–4 days' },
+  position: { label: 'Position',   color: '#4ade80', description: 'Hold up to 7 days' },
+};
+
+const DEFAULT_CONFIG = {
+  global: {
+    strategy: 'atr', stopMult: 1.5, tpMult: 3.0,
+    stopPct: 0.025, tpPct: 0.060, srBuffer: 0.005, minRR: 1.5,
+  },
+  profiles: {
+    intraday: { strategy: 'atr', stopMult: 1.2, tpMult: 2.4 },
+    dayTrade: { strategy: 'atr', stopMult: 1.5, tpMult: 3.0 },
+    swing:    { strategy: 'atr', stopMult: 2.0, tpMult: 5.0 },
+    position: { strategy: 'atr', stopMult: 2.5, tpMult: 7.5 },
+  },
+};
+
+function numInput(val, onChange, min, max, step = 0.1) {
+  return (
+    <input
+      type="number" value={val} min={min} max={max} step={step}
+      onChange={e => onChange(parseFloat(e.target.value) || 0)}
+      style={{
+        width: 70, background: C.bg, border: `1px solid ${C.border}`,
+        borderRadius: 6, padding: '4px 8px', color: C.text,
+        fontSize: 12, fontFamily: 'monospace', textAlign: 'right',
+      }}
+    />
+  );
+}
+
+function StrategySelect({ value, onChange }) {
+  const opts = [
+    { value: 'atr',        label: 'ATR-based',   desc: 'Adapts to volatility' },
+    { value: 'percentage', label: 'Percentage',  desc: 'Fixed % from entry' },
+    { value: 'sr',         label: 'Support/Resistance', desc: 'Uses S/R levels' },
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      {opts.map(o => (
+        <button key={o.value} onClick={() => onChange(o.value)}
+          style={{
+            flex: 1, padding: '7px 8px', borderRadius: 7, cursor: 'pointer',
+            border: `1px solid ${value === o.value ? C.blue : C.border}`,
+            background: value === o.value ? `${C.blue}18` : C.bg,
+            color: value === o.value ? C.blue : C.textMuted,
+            fontSize: 11, fontWeight: value === o.value ? 700 : 400,
+            transition: 'all 0.15s', textAlign: 'center',
+          }}>
+          <div>{o.label}</div>
+          <div style={{ fontSize: 9, marginTop: 2, opacity: 0.7 }}>{o.desc}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RRBadge({ stop, tp, entry = 100 }) {
+  if (!stop || !tp) return null;
+  const risk   = Math.abs(entry - stop);
+  const reward = Math.abs(tp - entry);
+  const rr = risk > 0 ? (reward / risk).toFixed(2) : 0;
+  const color = rr >= 2 ? C.green : rr >= 1.5 ? C.amber : C.red;
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 800, color,
+      background: `${color}18`, border: `1px solid ${color}40`,
+      borderRadius: 4, padding: '2px 6px', fontFamily: 'monospace',
+    }}>
+      {rr}:1 R:R
+    </span>
+  );
+}
+
+function previewLevels(cfg, profile = 'dayTrade') {
+  const g = cfg.global;
+  const p = { ...g, ...(cfg.profiles?.[profile] ?? {}) };
+  const entry = 100;
+  let stop, tp;
+  if (p.strategy === 'percentage') {
+    stop = entry * (1 - p.stopPct);
+    tp   = entry * (1 + p.tpPct);
+  } else {
+    // ATR preview: assume ATR = 2% of entry
+    const atr = entry * 0.02;
+    stop = entry - p.stopMult * atr;
+    tp   = entry + p.tpMult   * atr;
+  }
+  return { stop, tp };
+}
+
+function ProfileRow({ profileId, profileCfg, globalCfg, onChange }) {
+  const meta     = PROFILE_META[profileId];
+  const merged   = { ...globalCfg, ...profileCfg };
+  const [open, setOpen] = useState(false);
+  const { stop, tp } = previewLevels(
+    { global: globalCfg, profiles: { [profileId]: profileCfg } }, profileId
+  );
+
+  const set = (key, val) => onChange({ ...profileCfg, [key]: val });
+
+  return (
+    <div style={{ border: `1px solid ${C.border}`, borderRadius: 9, overflow: 'hidden', marginBottom: 8 }}>
+      {/* Header row */}
+      <button onClick={() => setOpen(o => !o)} style={{
+        width: '100%', background: C.bg, border: 'none', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '10px 14px', color: C.text,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: meta.color }} />
+          <div>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{meta.label}</span>
+            <span style={{ fontSize: 11, color: C.textMuted, marginLeft: 8 }}>{meta.description}</span>
+          </div>
+          <span style={{ fontSize: 10, color: C.textMuted, fontFamily: 'monospace', marginLeft: 4 }}>
+            {merged.strategy} · stop {merged.strategy === 'percentage'
+              ? `${(merged.stopPct*100).toFixed(1)}%`
+              : `${merged.stopMult}×ATR`}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <RRBadge stop={stop} tp={tp} entry={100} />
+          {open ? <ChevronUp size={14} color={C.textMuted} /> : <ChevronDown size={14} color={C.textMuted} />}
+        </div>
+      </button>
+
+      {/* Expanded controls */}
+      {open && (
+        <div style={{ padding: '14px 16px', background: C.surface2, borderTop: `1px solid ${C.border}` }}>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 10, color: C.textMuted, fontWeight: 700, letterSpacing: '0.1em',
+              textTransform: 'uppercase', marginBottom: 6 }}>Strategy</div>
+            <StrategySelect value={merged.strategy} onChange={v => set('strategy', v)} />
+          </div>
+
+          {merged.strategy === 'atr' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, color: C.red, fontWeight: 700, marginBottom: 4 }}>
+                  Stop Multiplier (× ATR)
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {numInput(merged.stopMult, v => set('stopMult', v), 0.5, 5, 0.1)}
+                  <span style={{ fontSize: 11, color: C.textMuted }}>×ATR from entry</span>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: C.green, fontWeight: 700, marginBottom: 4 }}>
+                  TP Multiplier (× ATR)
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {numInput(merged.tpMult, v => set('tpMult', v), 1, 20, 0.5)}
+                  <span style={{ fontSize: 11, color: C.textMuted }}>×ATR from entry</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {merged.strategy === 'percentage' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 10, color: C.red, fontWeight: 700, marginBottom: 4 }}>Stop Loss %</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {numInput((merged.stopPct*100).toFixed(1), v => set('stopPct', v/100), 0.5, 20, 0.5)}
+                  <span style={{ fontSize: 11, color: C.textMuted }}>% from entry</span>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: C.green, fontWeight: 700, marginBottom: 4 }}>Take Profit %</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {numInput((merged.tpPct*100).toFixed(1), v => set('tpPct', v/100), 1, 50, 0.5)}
+                  <span style={{ fontSize: 11, color: C.textMuted }}>% from entry</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {merged.strategy === 'sr' && (
+            <div>
+              <div style={{ fontSize: 10, color: C.amber, fontWeight: 700, marginBottom: 4 }}>S/R Buffer %</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {numInput((merged.srBuffer*100).toFixed(1), v => set('srBuffer', v/100), 0.1, 3, 0.1)}
+                <span style={{ fontSize: 11, color: C.textMuted }}>% padding beyond S/R level · Falls back to ATR if S/R unavailable</span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, color: C.textMuted }}>Preview (ATR=2% of entry):</span>
+            <RRBadge stop={stop} tp={tp} entry={100} />
+            <span style={{ fontSize: 10, fontFamily: 'monospace', color: C.red }}>
+              stop −{Math.abs(100-stop).toFixed(2)}%
+            </span>
+            <span style={{ fontSize: 10, fontFamily: 'monospace', color: C.green }}>
+              tp +{Math.abs(tp-100).toFixed(2)}%
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SlTpCard() {
+  const [cfg, setCfg] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.from('system_config').select('value').eq('key', 'sl_tp_config').single()
+      .then(({ data, error }) => {
+        if (data?.value) setCfg(data.value);
+        else setCfg(DEFAULT_CONFIG);
+        setLoading(false);
+      })
+      .catch(() => { setCfg(DEFAULT_CONFIG); setLoading(false); });
+  }, []);
+
+  const setGlobal = (key, val) => setCfg(c => ({ ...c, global: { ...c.global, [key]: val } }));
+  const setProfile = (profileId, patch) => setCfg(c => ({
+    ...c, profiles: { ...c.profiles, [profileId]: { ...(c.profiles?.[profileId] ?? {}), ...patch } }
+  }));
+
+  const save = async () => {
+    setStatus({ type: 'saving', msg: 'Saving…' });
+    const { error } = await supabase.from('system_config')
+      .upsert({ key: 'sl_tp_config', value: cfg, updated_at: new Date().toISOString() });
+    if (error) setStatus({ type: 'err', msg: error.message });
+    else setStatus({ type: 'ok', msg: 'Saved — applies to all new trades' });
+    setTimeout(() => setStatus(null), 3000);
+  };
+
+  const reset = () => { setCfg(DEFAULT_CONFIG); setStatus({ type: 'ok', msg: 'Reset to defaults (not saved yet)' }); setTimeout(() => setStatus(null), 2000); };
+
+  if (loading || !cfg) return null;
+
+  return (
+    <ConfigCard icon={Shield} title="Stop Loss & Take Profit"
+      description="Configure how stop loss and take profit levels are calculated for each trading profile">
+
+      {/* Global defaults */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.08em',
+          textTransform: 'uppercase', marginBottom: 10 }}>
+          Global Defaults
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 6, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            Default Strategy
+          </div>
+          <StrategySelect value={cfg.global.strategy} onChange={v => setGlobal('strategy', v)} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 4 }}>Min R:R Ratio</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {numInput(cfg.global.minRR, v => setGlobal('minRR', v), 1, 5, 0.1)}
+              <span style={{ fontSize: 10, color: C.textMuted }}>minimum</span>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 4 }}>Max Portfolio Risk / Trade</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.amber, fontFamily: 'monospace' }}>2%</span>
+              <span style={{ fontSize: 10, color: C.textMuted }}>(fixed — edit in risk rules)</span>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 4 }}>Max Concurrent Positions</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.amber, fontFamily: 'monospace' }}>
+              3 <span style={{ fontSize: 10, color: C.textMuted, fontWeight: 400 }}>(fixed)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height: 1, background: C.border, marginBottom: 14 }} />
+
+      {/* Per-profile overrides */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, letterSpacing: '0.08em',
+        textTransform: 'uppercase', marginBottom: 10 }}>
+        Per-Profile Overrides
+        <span style={{ fontSize: 10, fontWeight: 400, color: C.textMuted, marginLeft: 6 }}>
+          (click to expand each profile)
+        </span>
+      </div>
+
+      {Object.keys(PROFILE_META).map(id => (
+        <ProfileRow
+          key={id}
+          profileId={id}
+          profileCfg={cfg.profiles?.[id] ?? {}}
+          globalCfg={cfg.global}
+          onChange={patch => setProfile(id, patch)}
+        />
+      ))}
+
+      {/* Save bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+        <div>
+          {status && (
+            <span style={{ fontSize: 12, color: status.type === 'err' ? C.red : status.type === 'saving' ? C.amber : C.green }}>
+              {status.msg}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={reset} style={{
+            padding: '7px 14px', borderRadius: 7, border: `1px solid ${C.border}`,
+            background: 'none', color: C.textMuted, fontSize: 12, cursor: 'pointer',
+          }}>
+            Reset defaults
+          </button>
+          <button onClick={save} style={{
+            padding: '7px 16px', borderRadius: 7, border: 'none',
+            background: C.blue, color: '#000', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>
+            Save
+          </button>
+        </div>
+      </div>
+    </ConfigCard>
+  );
+}
+
 export default function Settings() {
   return (
     <div style={{ padding: '24px', maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -336,6 +675,9 @@ export default function Settings() {
 
       {/* Trading Universe editor */}
       <TradingUniverseCard />
+
+      {/* Stop Loss / Take Profit config */}
+      <SlTpCard />
 
       {/* Test Signal — moved here from Portfolio */}
       <ConfigCard
